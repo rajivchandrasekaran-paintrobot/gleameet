@@ -1,0 +1,26 @@
+{
+  "name": "gleameet",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Private Real-Time AI Meeting Coach",
+  "workspaces": [
+    "packages/shared",
+    "packages/law-registry",
+    "packages/backend",
+    "packages/extension"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "build:shared": "npm run build -w packages/shared",
+    "build:law-registry": "npm run build -w packages/law-registry",
+    "build:backend": "npm run build -w packages/backend",
+    "build:extension": "npm run build -w packages/extension",
+    "dev:backend": "npm run dev -w packages/backend",
+    "dev:extension": "npm run dev -w packages/extension",
+    "lint": "eslint packages/*/src/**/*.ts",
+    "test": "npm run test --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

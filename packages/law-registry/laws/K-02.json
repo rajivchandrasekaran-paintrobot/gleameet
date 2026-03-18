@@ -1,0 +1,32 @@
+{
+  "law_id": "K-02",
+  "version": "1.0.0",
+  "status": "active",
+  "source_family": "Kahneman",
+  "law_name": "Loss Aversion",
+  "description": "Detects overweighting of downside and narrowing of discussion around losses.",
+  "meeting_relevance": "User may be overweighting downside and narrowing the discussion.",
+  "observable_inputs": ["loss_frame_score", "gain_frame_score"],
+  "trigger_type": "rolling_window",
+  "trigger_logic": {
+    "all": [
+      {"feature": "loss_frame_score", "op": "gt", "value": 0.6},
+      {"feature": "gain_frame_score", "op": "lt", "value": 0.3}
+    ]
+  },
+  "disconfirming_logic": {
+    "any": [
+      {"feature": "gain_frame_score", "op": "gte", "value": 0.4}
+    ]
+  },
+  "prompt_templates_live": [
+    {"type": "frame", "text": "State one upside too."},
+    {"type": "frame", "text": "Frame tradeoffs, not just risks."},
+    {"type": "frame", "text": "Balance downside with opportunity."}
+  ],
+  "prompt_templates_post": ["You tended to emphasize potential losses without balancing with upsides."],
+  "confidence_threshold": 0.70,
+  "cooldown_seconds": 240,
+  "risk_notes": ["Do not imply the user is pessimistic as a trait."],
+  "allowed_inferences": ["User may be over-emphasizing potential loss."]
+}

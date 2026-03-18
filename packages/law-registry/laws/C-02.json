@@ -1,0 +1,33 @@
+{
+  "law_id": "C-02",
+  "version": "1.0.0",
+  "status": "active",
+  "source_family": "Cialdini",
+  "law_name": "Commitment/Consistency",
+  "description": "Detects stalled persuasion where smaller commitments could move conversation forward.",
+  "meeting_relevance": "Small commitments may move stalled conversations forward.",
+  "observable_inputs": ["turn_count", "acknowledgment_count", "action_specificity_score"],
+  "trigger_type": "rolling_window",
+  "trigger_logic": {
+    "all": [
+      {"feature": "turn_count", "op": "gt", "value": 6},
+      {"feature": "action_specificity_score", "op": "lt", "value": 0.3}
+    ]
+  },
+  "disconfirming_logic": {
+    "any": [
+      {"feature": "action_specificity_score", "op": "gte", "value": 0.5},
+      {"feature": "owner_assignment_present", "op": "eq", "value": true}
+    ]
+  },
+  "prompt_templates_live": [
+    {"type": "ask", "text": "Ask for a smaller commitment."},
+    {"type": "acknowledge", "text": "Confirm one point of agreement."},
+    {"type": "close", "text": "Get the next step, not full buy-in."}
+  ],
+  "prompt_templates_post": ["You continued seeking full agreement when a smaller commitment might have advanced the discussion."],
+  "confidence_threshold": 0.72,
+  "cooldown_seconds": 240,
+  "risk_notes": ["Do not imply user is being pushy."],
+  "allowed_inferences": ["A smaller ask may be more effective."]
+}

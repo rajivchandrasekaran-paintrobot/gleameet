@@ -1,0 +1,32 @@
+{
+  "law_id": "T-04",
+  "version": "1.0.0",
+  "status": "active",
+  "source_family": "Thaler",
+  "law_name": "Present Bias",
+  "description": "Detects overweighting of immediate friction without future payoff framing.",
+  "meeting_relevance": "Immediate friction may be getting more attention than future benefit.",
+  "observable_inputs": ["loss_frame_score", "gain_frame_score"],
+  "trigger_type": "rolling_window",
+  "trigger_logic": {
+    "all": [
+      {"feature": "loss_frame_score", "op": "gt", "value": 0.5},
+      {"feature": "gain_frame_score", "op": "lt", "value": 0.2}
+    ]
+  },
+  "disconfirming_logic": {
+    "any": [
+      {"feature": "gain_frame_score", "op": "gte", "value": 0.4}
+    ]
+  },
+  "prompt_templates_live": [
+    {"type": "frame", "text": "Name the long-term payoff."},
+    {"type": "frame", "text": "Compare cost to future gain."},
+    {"type": "frame", "text": "Reframe this as investment."}
+  ],
+  "prompt_templates_post": ["The discussion focused on near-term friction without addressing long-term benefits."],
+  "confidence_threshold": 0.68,
+  "cooldown_seconds": 300,
+  "risk_notes": ["Do not imply user is short-sighted as a trait."],
+  "allowed_inferences": ["The current framing may overweight immediate inconvenience."]
+}

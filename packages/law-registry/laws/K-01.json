@@ -1,0 +1,35 @@
+{
+  "law_id": "K-01",
+  "version": "1.0.0",
+  "status": "active",
+  "source_family": "Kahneman",
+  "law_name": "System 1 vs System 2",
+  "description": "Detects rapid rebuttal under disagreement without acknowledgment or clarification.",
+  "meeting_relevance": "User may react too quickly under pressure.",
+  "observable_inputs": ["disagreement_detected", "response_latency_seconds", "acknowledgment_count", "clarifying_question_count"],
+  "trigger_type": "event",
+  "trigger_logic": {
+    "all": [
+      {"feature": "disagreement_detected", "op": "eq", "value": true},
+      {"feature": "response_latency_seconds", "op": "lt", "value": 1.5},
+      {"feature": "acknowledgment_count", "op": "eq", "value": 0},
+      {"feature": "clarifying_question_count", "op": "eq", "value": 0}
+    ]
+  },
+  "disconfirming_logic": {
+    "any": [
+      {"feature": "acknowledgment_count", "op": "gt", "value": 0},
+      {"feature": "clarifying_question_count", "op": "gt", "value": 0}
+    ]
+  },
+  "prompt_templates_live": [
+    {"type": "ask", "text": "Pause. Ask one question first."},
+    {"type": "acknowledge", "text": "Acknowledge before rebutting."},
+    {"type": "pause", "text": "Slow down. Clarify first."}
+  ],
+  "prompt_templates_post": ["You often moved quickly to rebuttal before clarifying the concern."],
+  "confidence_threshold": 0.72,
+  "cooldown_seconds": 180,
+  "risk_notes": ["Do not infer trait impulsivity."],
+  "allowed_inferences": ["User may be reacting automatically rather than reflectively."]
+}

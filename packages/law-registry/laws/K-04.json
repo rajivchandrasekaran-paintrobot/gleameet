@@ -1,0 +1,33 @@
+{
+  "law_id": "K-04",
+  "version": "1.0.0",
+  "status": "active",
+  "source_family": "Kahneman",
+  "law_name": "Overconfidence",
+  "description": "Detects high certainty language with low evidence citation in ambiguous discussion.",
+  "meeting_relevance": "User may sound more certain than evidence supports.",
+  "observable_inputs": ["certainty_language_score", "hedging_language_score", "evidence_reference_present"],
+  "trigger_type": "rolling_window",
+  "trigger_logic": {
+    "all": [
+      {"feature": "certainty_language_score", "op": "gt", "value": 0.7},
+      {"feature": "evidence_reference_present", "op": "eq", "value": false}
+    ]
+  },
+  "disconfirming_logic": {
+    "any": [
+      {"feature": "hedging_language_score", "op": "gt", "value": 0.4},
+      {"feature": "evidence_reference_present", "op": "eq", "value": true}
+    ]
+  },
+  "prompt_templates_live": [
+    {"type": "frame", "text": "Name the assumption."},
+    {"type": "frame", "text": "Separate fact from estimate."},
+    {"type": "ask", "text": "Add uncertainty explicitly."}
+  ],
+  "prompt_templates_post": ["You used high-certainty language in areas where evidence was limited."],
+  "confidence_threshold": 0.71,
+  "cooldown_seconds": 240,
+  "risk_notes": ["Do not label user as arrogant or overconfident as a trait."],
+  "allowed_inferences": ["User may be signaling excessive certainty."]
+}

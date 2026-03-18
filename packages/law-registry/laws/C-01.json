@@ -1,0 +1,32 @@
+{
+  "law_id": "C-01",
+  "version": "1.0.0",
+  "status": "active",
+  "source_family": "Cialdini",
+  "law_name": "Reciprocity",
+  "description": "Detects persuasion attempts after resistance without first acknowledging the other side.",
+  "meeting_relevance": "Acknowledgment first may increase receptivity.",
+  "observable_inputs": ["acknowledgment_count", "turn_count"],
+  "trigger_type": "event",
+  "trigger_logic": {
+    "all": [
+      {"feature": "acknowledgment_count", "op": "eq", "value": 0},
+      {"feature": "turn_count", "op": "gt", "value": 3}
+    ]
+  },
+  "disconfirming_logic": {
+    "any": [
+      {"feature": "acknowledgment_count", "op": "gt", "value": 0}
+    ]
+  },
+  "prompt_templates_live": [
+    {"type": "acknowledge", "text": "Acknowledge their point first."},
+    {"type": "acknowledge", "text": "Recognize, then request."},
+    {"type": "frame", "text": "Offer value before asking."}
+  ],
+  "prompt_templates_post": ["You moved to persuasion without first acknowledging the other perspective."],
+  "confidence_threshold": 0.73,
+  "cooldown_seconds": 180,
+  "risk_notes": ["Do not imply user is selfish or unempathetic."],
+  "allowed_inferences": ["A recognition-first move may improve receptivity."]
+}
