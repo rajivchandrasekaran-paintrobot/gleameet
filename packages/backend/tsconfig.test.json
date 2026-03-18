@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": ".",
+    "noImplicitAny": false,
+    "strict": false,
+    "paths": {
+      "@gleameet/shared": ["../shared/src/index.ts"],
+      "@gleameet/law-registry": ["../law-registry/src/index.ts"]
+    },
+    "baseUrl": "."
+  },
+  "include": ["src", "tests"]
+}
