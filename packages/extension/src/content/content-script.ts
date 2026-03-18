@@ -19,6 +19,10 @@ interface ContentState {
   currentPrompt: PromptEvent | null;
   promptDismissTimer: ReturnType<typeof setTimeout> | null;
   mutationObserver: MutationObserver | null;
+  speechObserver: MutationObserver | null;
+  captionObserver: MutationObserver | null;
+  userSpeaking: boolean;
+  lastSpeechEmitMs: number;
 }
 
 const state: ContentState = {
@@ -29,26 +33,42 @@ const state: ContentState = {
   currentPrompt: null,
   promptDismissTimer: null,
   mutationObserver: null,
+  speechObserver: null,
+  captionObserver: null,
+  userSpeaking: false,
+  lastSpeechEmitMs: 0,
 };
+
+// Throttle speech events to avoid flooding (max one per 500ms)
+const SPEECH_THROTTLE_MS = 500;
 
 // --- Meeting Detection (FR-005, FR-006) ---
 
 /** Detect if we're in an active Google Meet session */
 function detectMeeting(): boolean {
-  // Google Meet uses specific DOM patterns for active meetings
+  // Check URL pattern first (most reliable)
+  const url = window.location.href;
+  if (!/meet\.google\.com\/[a-z]{3}-[a-z]{4}-[a-z]{3}/i.test(url)) {
+    return false;
+  }
+
+  // Check for Google Meet active meeting DOM indicators
   const meetIndicators = [
-    '[data-meeting-code]',
-    '[data-call-id]',
-    '[jscontroller="kAPMuc"]', // Meet call container
+    '[data-meeting-code]',       // Meeting code attribute
+    '[data-call-id]',            // Active call ID
+    '[jscontroller="kAPMuc"]',   // Meet call container
+    '[data-self-name]',          // Self-view with user name
+    'div[data-allocation-index]', // Video grid tiles
   ];
 
   for (const selector of meetIndicators) {
     if (document.querySelector(selector)) return true;
   }
 
-  // Fallback: check URL pattern for active meeting
-  const url = window.location.href;
-  return /meet\.google\.com\/[a-z]{3}-[a-z]{4}-[a-z]{3}/i.test(url);
+  // Fallback: check for the meeting toolbar (bottom bar with mic/camera controls)
+  const toolbar = document.querySelector('[jscontroller="KnNaaB"]') ||
+                  document.querySelector('[data-tooltip-id="tt-c9"]');
+  return !!toolbar;
 }
 
 /** Start observing the DOM for meeting lifecycle changes */
@@ -98,6 +118,16 @@ function onMeetingEnded(): void {
   state.status = 'off';
   state.meetingSessionId = null;
 
+  // Clean up observers
+  if (state.speechObserver) {
+    state.speechObserver.disconnect();
+    state.speechObserver = null;
+  }
+  if (state.captionObserver) {
+    state.captionObserver.disconnect();
+    state.captionObserver = null;
+  }
+
   // Clean up UI
   removeOverlay();
   removeStatusIndicator();
@@ -114,6 +144,9 @@ function startSignalCapture(): void {
   // Observe DOM for speech indicators
   observeSpeechIndicators();
 
+  // Observe captions for transcript capture
+  observeCaptions();
+
   // Emit session state change event
   emitEvent('session_state_changed', {
     previous_state: 'ready',
@@ -124,11 +157,12 @@ function startSignalCapture(): void {
 
 /** Observe Google Meet DOM for speech/participant indicators */
 function observeSpeechIndicators(): void {
-  // Google Meet shows visual indicators when participants speak
-  // This observer watches for those changes
-  const observer = new MutationObserver((mutations) => {
+  if (state.speechObserver) {
+    state.speechObserver.disconnect();
+  }
+
+  state.speechObserver = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
-      // Detect speaking indicators (blue border, audio wave animations)
       if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
         const target = mutation.target as HTMLElement;
         checkSpeechState(target);
@@ -136,21 +170,94 @@ function observeSpeechIndicators(): void {
     }
   });
 
-  observer.observe(document.body, {
+  state.speechObserver.observe(document.body, {
     attributes: true,
     subtree: true,
     attributeFilter: ['class', 'data-self-name'],
   });
 }
 
+/** Observe Google Meet captions/subtitles for transcript extraction */
+function observeCaptions(): void {
+  if (state.captionObserver) {
+    state.captionObserver.disconnect();
+  }
+
+  // Watch for caption container appearing
+  state.captionObserver = new MutationObserver(() => {
+    // Google Meet captions appear in elements with specific containers
+    const captionContainers = document.querySelectorAll(
+      '[jscontroller="D1tHje"] span, ' +            // Caption text spans
+      'div[class*="iOzk7"] span, ' +                // Alternative caption container
+      '[data-speaker-id] span'                       // Speaker-tagged spans
+    );
+
+    for (const el of captionContainers) {
+      const text = el.textContent?.trim();
+      if (text && text.length > 2 && !el.getAttribute('data-gleameet-captured')) {
+        el.setAttribute('data-gleameet-captured', '1');
+
+        // Determine speaker from parent context
+        const speakerEl = el.closest('[data-speaker-id]') || el.closest('[data-self-name]');
+        const isSelf = !!el.closest('[data-self-name]');
+        const speaker = isSelf ? 'user' : 'other';
+
+        emitEvent('transcript_segment', {
+          text,
+          speaker,
+          start_offset_ms: Date.now(),
+          end_offset_ms: Date.now(),
+        }, 0.6);
+      }
+    }
+  });
+
+  state.captionObserver.observe(document.body, {
+    childList: true,
+    subtree: true,
+    characterData: true,
+  });
+}
+
 /** Check if a DOM change indicates speech activity */
 function checkSpeechState(element: HTMLElement): void {
-  // Heuristic: Google Meet uses specific CSS classes for speaking indicators
   const classes = element.className || '';
+  const now = Date.now();
+
+  // Throttle speech events
+  if (now - state.lastSpeechEmitMs < SPEECH_THROTTLE_MS) return;
 
   // Detect user speaking (self-view with active audio indicator)
-  if (classes.includes('IisKdb') || classes.includes('gLhFNb')) {
-    emitEvent('speech_started', { speaker: 'user', offset_ms: Date.now() }, 0.7);
+  // Google Meet uses several CSS classes for speaking state
+  const isSpeakingIndicator = classes.includes('IisKdb') ||
+                              classes.includes('gLhFNb') ||
+                              classes.includes('Gv1mTb-aTv5jf');
+
+  const isSelfView = !!element.closest('[data-self-name]') ||
+                     !!element.closest('[data-is-self="true"]');
+
+  if (isSpeakingIndicator && isSelfView) {
+    if (!state.userSpeaking) {
+      state.userSpeaking = true;
+      state.lastSpeechEmitMs = now;
+      emitEvent('speech_started', { speaker: 'user', offset_ms: now }, 0.7);
+    }
+  } else if (state.userSpeaking && isSelfView && !isSpeakingIndicator) {
+    state.userSpeaking = false;
+    state.lastSpeechEmitMs = now;
+    emitEvent('speech_ended', { speaker: 'user', offset_ms: now }, 0.7);
+  }
+
+  // Detect turn changes (other participant starts speaking)
+  if (isSpeakingIndicator && !isSelfView) {
+    if (state.userSpeaking) {
+      // User was speaking, now someone else is — turn change
+      emitEvent('turn_change', {
+        from_speaker: 'user',
+        to_speaker: 'other',
+        gap_ms: 0,
+      }, 0.5);
+    }
   }
 }
 

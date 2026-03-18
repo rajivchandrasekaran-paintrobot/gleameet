@@ -6,6 +6,7 @@ interface PopupState {
   status: SessionStatus;
   meetingSessionId: string | null;
   authenticated: boolean;
+  userId: string | null;
 }
 
 export const Popup: React.FC = () => {
@@ -13,6 +14,7 @@ export const Popup: React.FC = () => {
     status: 'off',
     meetingSessionId: null,
     authenticated: false,
+    userId: null,
   });
 
   useEffect(() => {
@@ -23,6 +25,8 @@ export const Popup: React.FC = () => {
           ...prev,
           status: response.status || 'off',
           meetingSessionId: response.meetingSessionId || null,
+          authenticated: response.authenticated || false,
+          userId: response.userId || null,
         }));
       }
     });
@@ -40,6 +44,19 @@ export const Popup: React.FC = () => {
     chrome.runtime.onMessage.addListener(listener);
     return () => chrome.runtime.onMessage.removeListener(listener);
   }, []);
+
+  const handleSignIn = () => {
+    // In production, this would trigger Google OAuth flow via chrome.identity.
+    // For v1, use a mock token.
+    chrome.runtime.sendMessage({
+      type: 'AUTHENTICATE',
+      googleIdToken: `mock-user-${Date.now()}`,
+    }, (response) => {
+      if (response?.ok) {
+        setState(prev => ({ ...prev, authenticated: true, userId: response.userId }));
+      }
+    });
+  };
 
   const handleStartCoaching = () => {
     chrome.runtime.sendMessage({
@@ -89,11 +106,22 @@ export const Popup: React.FC = () => {
           <span className="dot" />
           {statusLabels[state.status]}
         </div>
+        {state.meetingSessionId && (
+          <div style={{ fontSize: '11px', color: '#999', marginTop: '4px' }}>
+            Session: {state.meetingSessionId.slice(0, 8)}...
+          </div>
+        )}
       </div>
 
       {/* Controls */}
       <div className="controls">
-        {state.status === 'ready' && (
+        {!state.authenticated && (
+          <button className="btn btn-primary" onClick={handleSignIn}>
+            Sign In
+          </button>
+        )}
+
+        {state.authenticated && state.status === 'ready' && (
           <button className="btn btn-primary" onClick={handleStartCoaching}>
             Enable Coaching
           </button>
@@ -121,7 +149,7 @@ export const Popup: React.FC = () => {
           </>
         )}
 
-        {state.status === 'off' && (
+        {state.authenticated && state.status === 'off' && (
           <p style={{ fontSize: '13px', color: '#6b6b80', textAlign: 'center' }}>
             Join a Google Meet call to start coaching
           </p>

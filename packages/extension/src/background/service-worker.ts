@@ -4,8 +4,8 @@
  * Runs as a Manifest V3 service worker.
  */
 
-import { setSessionToken, sendEventBatch, pollPrompts, endMeeting, startMeeting } from '../utils/api-client';
-import type { RawEvent, MeetingStartRequest, PromptEvent } from '@gleameet/shared';
+import { setSessionToken, getSessionToken, sendEventBatch, pollPrompts, endMeeting, startMeeting, ackPrompt, createSession } from '../utils/api-client';
+import type { RawEvent, MeetingStartRequest, PromptEvent, PromptAckRequest } from '@gleameet/shared';
 
 /** Current meeting session state */
 interface SessionState {
@@ -25,6 +25,14 @@ const state: SessionState = {
   pollingInterval: null,
   batchInterval: null,
 };
+
+// Restore auth token from chrome.storage on startup
+chrome.storage.local.get(['sessionToken', 'userId'], (data) => {
+  if (data.sessionToken) {
+    setSessionToken(data.sessionToken);
+    state.userId = data.userId || null;
+  }
+});
 
 /** Listen for messages from content script and popup */
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -67,21 +75,55 @@ async function handleMessage(message: any): Promise<any> {
       return {
         status: state.status,
         meetingSessionId: state.meetingSessionId,
+        userId: state.userId,
+        authenticated: !!getSessionToken(),
       };
 
     case 'SET_AUTH_TOKEN':
       setSessionToken(message.token);
       state.userId = message.userId;
+      // Persist to chrome.storage for service worker restarts
+      chrome.storage.local.set({
+        sessionToken: message.token,
+        userId: message.userId,
+      });
       return { ok: true };
+
+    case 'AUTHENTICATE':
+      return handleAuthenticate(message.googleIdToken);
+
+    case 'ACK_PROMPT':
+      return handleAckPrompt(message);
 
     default:
       return { error: 'Unknown message type' };
   }
 }
 
+/** Authenticate with backend using Google ID token */
+async function handleAuthenticate(googleIdToken: string): Promise<any> {
+  try {
+    const result = await createSession(googleIdToken);
+    state.userId = result.user_id;
+    // Store token persistently
+    chrome.storage.local.set({
+      sessionToken: result.session_token,
+      userId: result.user_id,
+    });
+    return { ok: true, userId: result.user_id };
+  } catch (err: any) {
+    return { error: err.message };
+  }
+}
+
 /** Start a coaching session */
 async function handleStartCoaching(message: any): Promise<any> {
   try {
+    // Ensure we're authenticated
+    if (!getSessionToken()) {
+      return { error: 'Not authenticated. Please sign in first.' };
+    }
+
     const request: MeetingStartRequest = {
       platform: 'google_meet',
       meeting_label: message.meetingLabel || null,
@@ -94,11 +136,24 @@ async function handleStartCoaching(message: any): Promise<any> {
     state.status = 'active';
     state.eventBuffer = [];
 
-    // Start event batching (send events every 2 seconds)
-    state.batchInterval = setInterval(flushEventBuffer, response.session_config.batch_interval_ms);
+    // Start event batching every 3 seconds (per SRS)
+    state.batchInterval = setInterval(flushEventBuffer, 3000);
 
-    // Start prompt polling (poll every 1 second)
-    state.pollingInterval = setInterval(pollForPrompts, response.session_config.polling_interval_ms);
+    // Start prompt polling every 2 seconds (per SRS)
+    state.pollingInterval = setInterval(pollForPrompts, 2000);
+
+    // Notify content script that coaching has started
+    chrome.tabs.query({ url: 'https://meet.google.com/*' }, (tabs) => {
+      for (const tab of tabs) {
+        if (tab.id) {
+          chrome.tabs.sendMessage(tab.id, {
+            type: 'COACHING_STARTED',
+            meetingSessionId: response.meeting_session_id,
+            userId: state.userId,
+          }).catch(() => {});
+        }
+      }
+    });
 
     broadcastStatus();
     return { status: 'active', meetingSessionId: response.meeting_session_id };
@@ -123,6 +178,15 @@ async function handleStopCoaching(): Promise<any> {
       if (state.batchInterval) clearInterval(state.batchInterval);
       if (state.pollingInterval) clearInterval(state.pollingInterval);
 
+      // Dismiss all prompts on content scripts
+      chrome.tabs.query({ url: 'https://meet.google.com/*' }, (tabs) => {
+        for (const tab of tabs) {
+          if (tab.id) {
+            chrome.tabs.sendMessage(tab.id, { type: 'DISMISS_ALL_PROMPTS' }).catch(() => {});
+          }
+        }
+      });
+
       state.meetingSessionId = null;
       state.status = 'off';
       state.eventBuffer = [];
@@ -140,7 +204,7 @@ async function handleStopCoaching(): Promise<any> {
   }
 }
 
-/** Flush buffered events to the backend */
+/** Flush buffered events to the backend every 3 seconds */
 async function flushEventBuffer(): Promise<void> {
   if (state.eventBuffer.length === 0 || !state.meetingSessionId) return;
 
@@ -160,13 +224,13 @@ async function flushEventBuffer(): Promise<void> {
       }
     }
   } catch (err) {
-    // Re-buffer events on failure (ER-003)
+    // Re-buffer events on failure (ER-003: retry on next interval)
     state.eventBuffer.unshift(...events);
     console.error('[GleaMeet] Event batch failed:', err);
   }
 }
 
-/** Poll for pending prompts */
+/** Poll for pending prompts every 2 seconds */
 async function pollForPrompts(): Promise<void> {
   if (!state.meetingSessionId || state.status !== 'active') return;
 
@@ -177,6 +241,23 @@ async function pollForPrompts(): Promise<void> {
     }
   } catch (err) {
     console.error('[GleaMeet] Prompt poll failed:', err);
+  }
+}
+
+/** Handle prompt acknowledgment from content script */
+async function handleAckPrompt(message: any): Promise<any> {
+  try {
+    const request: PromptAckRequest = {
+      prompt_id: message.promptId,
+      meeting_session_id: message.meetingSessionId || state.meetingSessionId || '',
+      action: message.action,
+      timestamp: new Date().toISOString(),
+    };
+    await ackPrompt(request);
+    return { ok: true };
+  } catch (err: any) {
+    console.error('[GleaMeet] Prompt ack failed:', err);
+    return { error: err.message };
   }
 }
 
