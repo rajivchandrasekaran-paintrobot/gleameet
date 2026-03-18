@@ -5,6 +5,8 @@ import { AuthenticatedRequest } from '../middleware/auth';
 import { initMeetingState, getMeetingState, updateMeetingState } from '../db/redis';
 import { loadActiveLaws } from '@gleameet/law-registry';
 import { generateReport } from '../services/report-generator';
+import { insertMeetingSession, endMeetingSession, insertConsentRecord, deleteMeetingData } from '../db/queries';
+import { redis } from '../db/redis';
 
 export const meetingsRouter = Router();
 
@@ -24,10 +26,20 @@ meetingsRouter.post('/start', async (req: AuthenticatedRequest, res: Response) =
 
     const meetingSessionId = uuidv4();
 
+    // Persist to Postgres
+    await insertMeetingSession(
+      meetingSessionId, userId, body.platform,
+      body.extension_version, body.meeting_label || null
+    );
+
+    // Record consent
+    await insertConsentRecord(
+      meetingSessionId, userId,
+      body.consent.consent_version, body.consent.scope
+    );
+
     // Initialize meeting state in Redis
     await initMeetingState(meetingSessionId, userId);
-
-    // TODO: Persist to Postgres (meeting_sessions + consent_records tables)
 
     // Load active laws for the session
     const activeLaws = loadActiveLaws();
@@ -35,9 +47,9 @@ meetingsRouter.post('/start', async (req: AuthenticatedRequest, res: Response) =
     const response: MeetingStartResponse = {
       meeting_session_id: meetingSessionId,
       session_config: {
-        polling_interval_ms: 1000,
+        polling_interval_ms: 2000,
         batch_max_size: 50,
-        batch_interval_ms: 2000,
+        batch_interval_ms: 3000,
       },
       active_laws: activeLaws.map(l => ({
         law_id: l.law_id,
@@ -88,7 +100,8 @@ meetingsRouter.post('/end', async (req: AuthenticatedRequest, res: Response) => 
     state.status = 'ended';
     await updateMeetingState(meeting_session_id, state);
 
-    // TODO: Persist end time to Postgres
+    // Persist end time to Postgres
+    await endMeetingSession(meeting_session_id);
 
     // Generate post-meeting report
     const reportId = await generateReport(meeting_session_id, state);
@@ -115,11 +128,15 @@ meetingsRouter.delete('/:meeting_session_id', async (req: AuthenticatedRequest, 
     const { meeting_session_id } = req.params;
     const userId = req.userId!;
 
-    // TODO: Delete from Postgres (cascading delete handles related records)
-    // TODO: Clean up Redis state
-    // TODO: Create deletion audit record
+    // Delete from Postgres (cascading delete handles related records)
+    const deletionAuditId = await deleteMeetingData(meeting_session_id, userId);
 
-    const deletionAuditId = uuidv4();
+    // Clean up Redis state
+    const keys = await redis.keys(`gleameet:meeting:${meeting_session_id}:*`);
+    if (keys.length > 0) {
+      // Keys already have the prefix from the scan, strip it for del
+      await redis.del(...keys.map(k => k.replace(/^gleameet:/, '')));
+    }
 
     const response: DeleteMeetingResponse = {
       deletion_audit_id: deletionAuditId,

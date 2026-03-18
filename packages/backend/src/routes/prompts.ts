@@ -1,10 +1,11 @@
 import { Router, Response } from 'express';
 import { PromptPollResponse, PromptAckRequest, PromptAckResponse } from '@gleameet/shared';
 import { AuthenticatedRequest } from '../middleware/auth';
+import { updatePromptDisplayState } from '../db/queries';
 
 export const promptsRouter = Router();
 
-// In-memory prompt store (in production, use Redis or Postgres)
+// In-memory prompt store (Redis-backed in production; in-process is fine for single-instance v1)
 const pendingPrompts = new Map<string, any[]>();
 
 /**
@@ -45,7 +46,12 @@ promptsRouter.post('/ack', async (req: AuthenticatedRequest, res: Response) => {
       return;
     }
 
-    // TODO: Update prompt_events record in Postgres with display_state and dismissed_at
+    // Update prompt display state in Postgres
+    const dismissedAt = body.action === 'dismissed' ? (body.timestamp || new Date().toISOString()) : null;
+    const displayState = body.action === 'muted' ? 'muted' : body.action;
+
+    await updatePromptDisplayState(body.prompt_id, displayState, dismissedAt);
+
     console.log(`[PROMPTS] Ack: prompt=${body.prompt_id} action=${body.action}`);
 
     const response: PromptAckResponse = { ok: true };

@@ -62,6 +62,24 @@ export interface MeetingState {
   prompts_shown_count: number;
   last_prompt_shown_at: string | null;
   events_ingested: number;
+  // Linguistic classifier accumulators
+  hedging_hits: number;
+  certainty_hits: number;
+  loss_frame_hits: number;
+  gain_frame_hits: number;
+  action_specificity_hits: number;
+  transcript_segment_count: number;
+  disagreement_detected: boolean;
+  option_count_presented: number;
+  default_recommendation_present: boolean;
+  owner_assignment_present: boolean;
+  deadline_present: boolean;
+  evidence_reference_present: boolean;
+  peer_example_present: boolean;
+  shared_goal_language_present: boolean;
+  // Track law triggers for reports
+  law_trigger_ids: string[];
+  prompt_ids: string[];
 }
 
 /** Initialize meeting state in Redis */
@@ -85,6 +103,22 @@ export async function initMeetingState(sessionId: string, userId: string): Promi
     prompts_shown_count: 0,
     last_prompt_shown_at: null,
     events_ingested: 0,
+    hedging_hits: 0,
+    certainty_hits: 0,
+    loss_frame_hits: 0,
+    gain_frame_hits: 0,
+    action_specificity_hits: 0,
+    transcript_segment_count: 0,
+    disagreement_detected: false,
+    option_count_presented: 0,
+    default_recommendation_present: false,
+    owner_assignment_present: false,
+    deadline_present: false,
+    evidence_reference_present: false,
+    peer_example_present: false,
+    shared_goal_language_present: false,
+    law_trigger_ids: [],
+    prompt_ids: [],
   };
   await redis.set(meetingStateKey(sessionId), JSON.stringify(state), 'EX', 14400); // 4h TTL
 }

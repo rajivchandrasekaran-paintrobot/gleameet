@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { AuthSessionRequest, AuthSessionResponse } from '@gleameet/shared';
+import { upsertUser } from '../db/queries';
+import { redis } from '../db/redis';
 
 export const authRouter = Router();
 
@@ -17,10 +19,21 @@ authRouter.post('/session', async (req: Request, res: Response) => {
       return;
     }
 
-    // TODO: Verify Google ID token with Google's OAuth2 API
-    // For scaffold, create a mock session
-    const userId = uuidv4();
+    // In production, verify the Google ID token with Google's tokeninfo endpoint.
+    // For v1, we decode a mock payload: the token IS the subject ID.
+    // A real implementation would call:
+    //   const ticket = await client.verifyIdToken({ idToken: google_id_token, audience: CLIENT_ID });
+    //   const { sub, email, name } = ticket.getPayload();
+    const googleSubjectId = google_id_token;
+    const email = `user-${googleSubjectId.slice(0, 8)}@gleameet.dev`;
+    const displayName = `User ${googleSubjectId.slice(0, 8)}`;
+
+    // Upsert user in Postgres
+    const userId = await upsertUser(googleSubjectId, email, displayName);
+
+    // Create session token and store in Redis (24h TTL)
     const sessionToken = `session:${userId}:${uuidv4()}`;
+    await redis.set(`session:${sessionToken}`, userId, 'EX', 86400);
 
     const response: AuthSessionResponse = {
       session_token: sessionToken,
@@ -38,6 +51,7 @@ authRouter.post('/session', async (req: Request, res: Response) => {
       },
     };
 
+    console.log(`[AUTH] Session created for user ${userId}`);
     res.status(200).json(response);
   } catch (err) {
     console.error('[AUTH] Session creation error:', err);

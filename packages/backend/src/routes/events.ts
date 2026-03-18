@@ -6,6 +6,8 @@ import { getMeetingState, updateMeetingState } from '../db/redis';
 import { processEvents } from '../features/feature-engine';
 import { evaluateLaws } from '../law-engine/law-evaluator';
 import { rankAndSelectPrompt } from '../intervention/intervention-engine';
+import { insertRawEvents, insertLawTrigger, insertPromptEvent } from '../db/queries';
+import { enqueuePendingPrompt } from './prompts';
 
 export const eventsRouter = Router();
 
@@ -52,18 +54,41 @@ eventsRouter.post('/batch', async (req: AuthenticatedRequest, res: Response) => 
     // Update event count in state
     state.events_ingested += validEvents.length;
 
+    // Persist valid events to Postgres
+    insertRawEvents(validEvents).catch(err => {
+      console.error('[EVENTS] Failed to persist events:', err.message);
+    });
+
     // Step 1: Feature extraction
     const features = await processEvents(validEvents, state);
 
     // Step 2: Law evaluation
     const triggers = await evaluateLaws(body.meeting_session_id, features, state);
 
+    // Persist triggers
+    for (const trigger of triggers) {
+      state.law_trigger_ids.push(trigger.trigger_id);
+      insertLawTrigger(trigger).catch(err => {
+        console.error('[EVENTS] Failed to persist trigger:', err.message);
+      });
+    }
+
     // Step 3: Intervention ranking (returns at most one prompt per FR-045)
     const prompt = await rankAndSelectPrompt(body.meeting_session_id, triggers, state);
 
+    if (prompt) {
+      state.prompt_ids.push(prompt.prompt_id);
+      // Enqueue for polling
+      enqueuePendingPrompt(body.meeting_session_id, prompt);
+      // Persist prompt event
+      insertPromptEvent(prompt).catch(err => {
+        console.error('[EVENTS] Failed to persist prompt:', err.message);
+      });
+    }
+
     await updateMeetingState(body.meeting_session_id, state);
 
-    // TODO: Persist valid events to Postgres
+    console.log(`[EVENTS] Processed batch: ${accepted.length} accepted, ${errors.length} errors, ${triggers.length} triggers, prompt=${!!prompt}`);
 
     const response: EventsBatchResponse = {
       accepted_count: accepted.length,
