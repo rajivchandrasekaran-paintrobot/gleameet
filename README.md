@@ -55,10 +55,39 @@ Coaching is **private to the user only** — no one else in the meeting can see 
 ### Prerequisites
 
 - Node.js 18+
-- Docker and Docker Compose (for Postgres + Redis)
+- PostgreSQL 14+ and Redis 7+ — either via Docker **or** installed locally
 - Chrome browser (for extension)
+- (Recommended) [Ollama](https://ollama.com) for local LLM-powered report generation
 
-### Quick Start
+### Quick Start (without Docker)
+
+If you have Postgres and Redis running locally (e.g. via Homebrew, apt, or your OS package manager):
+
+```bash
+# 1. Clone and install
+git clone <repo-url> && cd gleameet
+npm install
+
+# 2. Create the database and load the schema
+createdb gleameet                           # or: psql -c "CREATE DATABASE gleameet;"
+psql -d gleameet -f packages/backend/src/db/schema.sql
+
+# 3. Configure environment
+cp .env.example .env
+# Edit .env if your local Postgres user/password differs from the defaults
+
+# 4. Pull the default Ollama model (for LLM-powered reports)
+ollama pull llama3.2
+
+# 5. Build shared packages and start backend in dev mode
+npm run build:shared && npm run build:law-registry
+npm run dev:backend
+
+# 6. Run tests
+cd packages/backend && npm test
+```
+
+### Quick Start (with Docker)
 
 ```bash
 # 1. Clone and install
@@ -68,16 +97,18 @@ npm install
 # 2. Start infrastructure
 docker-compose up -d postgres redis
 
-# 3. Initialize database
-docker exec -i gleameet-postgres-1 psql -U gleameet -d gleameet < packages/backend/src/db/schema.sql
-
-# 4. Start backend in dev mode
+# 3. Configure environment
 cp .env.example .env
+
+# 4. Build shared packages and start backend in dev mode
+npm run build:shared && npm run build:law-registry
 npm run dev:backend
 
 # 5. Run tests
 cd packages/backend && npm test
 ```
+
+> **Note:** When using Docker for Postgres, the schema is automatically loaded on first start via the `docker-entrypoint-initdb.d` mount.
 
 ### Full Docker Setup
 
@@ -88,6 +119,24 @@ docker-compose up --build
 # Backend available at http://localhost:3001
 # Health check: http://localhost:3001/health
 # Metrics: http://localhost:3001/metrics
+```
+
+### LLM Configuration
+
+By default, GleaMeet uses a local [Ollama](https://ollama.com) instance for LLM-powered report generation (strengths, growth areas, recommendations). If Ollama is not running, the report generator falls back to rule-based output automatically.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LLM_BASE_URL` | `http://localhost:11434/v1` | LLM API base URL |
+| `LLM_MODEL` | `llama3.2` | Model name |
+| `LLM_API_KEY` | `ollama` | API key (Ollama ignores this) |
+
+To use OpenAI or another provider instead, set these variables in your `.env`:
+
+```bash
+LLM_BASE_URL=https://api.openai.com/v1
+LLM_MODEL=gpt-4o-mini
+LLM_API_KEY=sk-your-key-here
 ```
 
 ## Loading the Extension

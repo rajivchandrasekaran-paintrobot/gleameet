@@ -17,6 +17,8 @@
     "build:extension": "npm run build -w packages/extension",
     "dev:backend": "npm run dev -w packages/backend",
     "dev:extension": "npm run dev -w packages/extension",
+    "db:init": "psql -d gleameet -f packages/backend/src/db/schema.sql",
+    "docker:infra": "docker-compose up -d postgres redis",
     "lint": "eslint packages/*/src/**/*.ts",
     "test": "npm run test --workspaces --if-present"
   },
