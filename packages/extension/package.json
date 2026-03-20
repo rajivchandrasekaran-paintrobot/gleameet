@@ -14,7 +14,7 @@
     "typescript": "^5.3.3"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && cp dist/content/content-script.js public/content.js && cp dist/background/service-worker.js public/background.js && cp dist/popup/index.js public/popup.js",
     "dev": "tsc --watch"
   }
 }
