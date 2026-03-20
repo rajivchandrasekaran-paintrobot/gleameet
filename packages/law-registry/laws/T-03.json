@@ -6,29 +6,68 @@
   "law_name": "Nudge",
   "description": "Detects agreement without action structure near discussion close.",
   "meeting_relevance": "Small structure cues can convert agreement into action.",
-  "observable_inputs": ["owner_assignment_present", "deadline_present", "action_specificity_score"],
+  "observable_inputs": [
+    "owner_assignment_present",
+    "deadline_present",
+    "action_specificity_score"
+  ],
   "trigger_type": "event",
   "trigger_logic": {
     "all": [
-      {"feature": "owner_assignment_present", "op": "eq", "value": false},
-      {"feature": "deadline_present", "op": "eq", "value": false},
-      {"feature": "action_specificity_score", "op": "lt", "value": 0.3}
+      {
+        "feature": "owner_assignment_present",
+        "op": "eq",
+        "value": false
+      },
+      {
+        "feature": "deadline_present",
+        "op": "eq",
+        "value": false
+      },
+      {
+        "feature": "action_specificity_score",
+        "op": "lt",
+        "value": 0.3
+      }
     ]
   },
   "disconfirming_logic": {
     "any": [
-      {"feature": "owner_assignment_present", "op": "eq", "value": true},
-      {"feature": "deadline_present", "op": "eq", "value": true}
+      {
+        "feature": "owner_assignment_present",
+        "op": "eq",
+        "value": true
+      },
+      {
+        "feature": "deadline_present",
+        "op": "eq",
+        "value": true
+      }
     ]
   },
   "prompt_templates_live": [
-    {"type": "close", "text": "Assign owner and date."},
-    {"type": "close", "text": "Convert agreement into next step."},
-    {"type": "close", "text": "Name the action now."}
+    {
+      "type": "close",
+      "text": "Assign owner and date."
+    },
+    {
+      "type": "close",
+      "text": "Convert agreement into next step."
+    },
+    {
+      "type": "close",
+      "text": "Name the action now."
+    }
   ],
-  "prompt_templates_post": ["Agreement was reached but action items were not assigned."],
-  "confidence_threshold": 0.76,
-  "cooldown_seconds": 180,
-  "risk_notes": ["Do not imply the user is not taking responsibility."],
-  "allowed_inferences": ["A small procedural nudge may improve follow-through."]
+  "prompt_templates_post": [
+    "Agreement was reached but action items were not assigned."
+  ],
+  "confidence_threshold": 0.4,
+  "cooldown_seconds": 30,
+  "risk_notes": [
+    "Do not imply the user is not taking responsibility."
+  ],
+  "allowed_inferences": [
+    "A small procedural nudge may improve follow-through."
+  ]
 }

@@ -323,6 +323,10 @@ function updateStateFromEvent(event: RawEvent, state: MeetingState): void {
       const payload = event.payload as any;
       if (payload?.speaker === 'user' && payload?.text) {
         state.transcript_segment_count++;
+        // Each transcript segment counts as a speaking turn
+        state.turn_count++;
+        state.last_speech_start_ms = now;
+        state.user_is_speaking = true;
         analyzeTranscriptText(payload.text, state);
       }
       break;

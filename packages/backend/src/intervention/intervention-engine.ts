@@ -111,7 +111,7 @@ export async function rankAndSelectPrompt(
   if (selected.score < 0.2) return null;
 
   // Set global cooldown (FR-046)
-  await setGlobalCooldown(meetingSessionId, 60); // default 60s
+  await setGlobalCooldown(meetingSessionId, 15); // 15s between prompts
   await incrementPromptCount(meetingSessionId);
 
   // Update state

@@ -88,7 +88,8 @@ eventsRouter.post('/batch', async (req: AuthenticatedRequest, res: Response) => 
 
     await updateMeetingState(body.meeting_session_id, state);
 
-    console.log(`[EVENTS] Processed batch: ${accepted.length} accepted, ${errors.length} errors, ${triggers.length} triggers, prompt=${!!prompt}`);
+    const eventTypes = body.events.map((e: any) => e.event_type).join(', ');
+    console.log(`[EVENTS] Processed batch: ${accepted.length} accepted, ${errors.length} errors, ${triggers.length} triggers, prompt=${!!prompt} | types: ${eventTypes}`);
 
     const response: EventsBatchResponse = {
       accepted_count: accepted.length,

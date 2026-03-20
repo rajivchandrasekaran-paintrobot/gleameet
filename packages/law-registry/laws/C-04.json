@@ -6,27 +6,57 @@
   "law_name": "Authority",
   "description": "Detects recommendations without supporting authoritative evidence.",
   "meeting_relevance": "Credible sources or data may strengthen recommendations.",
-  "observable_inputs": ["evidence_reference_present", "certainty_language_score"],
+  "observable_inputs": [
+    "evidence_reference_present",
+    "certainty_language_score"
+  ],
   "trigger_type": "rolling_window",
   "trigger_logic": {
     "all": [
-      {"feature": "evidence_reference_present", "op": "eq", "value": false},
-      {"feature": "certainty_language_score", "op": "gt", "value": 0.5}
+      {
+        "feature": "evidence_reference_present",
+        "op": "eq",
+        "value": false
+      },
+      {
+        "feature": "certainty_language_score",
+        "op": "gt",
+        "value": 0.5
+      }
     ]
   },
   "disconfirming_logic": {
     "any": [
-      {"feature": "evidence_reference_present", "op": "eq", "value": true}
+      {
+        "feature": "evidence_reference_present",
+        "op": "eq",
+        "value": true
+      }
     ]
   },
   "prompt_templates_live": [
-    {"type": "frame", "text": "Cite the evidence."},
-    {"type": "frame", "text": "Name the source."},
-    {"type": "frame", "text": "Ground this in data."}
+    {
+      "type": "frame",
+      "text": "Cite the evidence."
+    },
+    {
+      "type": "frame",
+      "text": "Name the source."
+    },
+    {
+      "type": "frame",
+      "text": "Ground this in data."
+    }
   ],
-  "prompt_templates_post": ["You made recommendations without citing supporting evidence."],
-  "confidence_threshold": 0.70,
-  "cooldown_seconds": 300,
-  "risk_notes": ["Do not imply user lacks credibility as a trait."],
-  "allowed_inferences": ["Grounding in expertise may strengthen the case."]
+  "prompt_templates_post": [
+    "You made recommendations without citing supporting evidence."
+  ],
+  "confidence_threshold": 0.4,
+  "cooldown_seconds": 30,
+  "risk_notes": [
+    "Do not imply user lacks credibility as a trait."
+  ],
+  "allowed_inferences": [
+    "Grounding in expertise may strengthen the case."
+  ]
 }

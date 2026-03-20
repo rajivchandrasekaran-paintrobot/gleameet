@@ -6,28 +6,63 @@
   "law_name": "Default Effect",
   "description": "Detects stalled group decisions where a clear default path could unblock progress.",
   "meeting_relevance": "A clear default can unblock group decisions.",
-  "observable_inputs": ["option_count_presented", "default_recommendation_present", "turn_count"],
+  "observable_inputs": [
+    "option_count_presented",
+    "default_recommendation_present",
+    "turn_count"
+  ],
   "trigger_type": "rolling_window",
   "trigger_logic": {
     "all": [
-      {"feature": "option_count_presented", "op": "gt", "value": 1},
-      {"feature": "default_recommendation_present", "op": "eq", "value": false},
-      {"feature": "turn_count", "op": "gt", "value": 5}
+      {
+        "feature": "option_count_presented",
+        "op": "gt",
+        "value": 1
+      },
+      {
+        "feature": "default_recommendation_present",
+        "op": "eq",
+        "value": false
+      },
+      {
+        "feature": "turn_count",
+        "op": "gt",
+        "value": 5
+      }
     ]
   },
   "disconfirming_logic": {
     "any": [
-      {"feature": "default_recommendation_present", "op": "eq", "value": true}
+      {
+        "feature": "default_recommendation_present",
+        "op": "eq",
+        "value": true
+      }
     ]
   },
   "prompt_templates_live": [
-    {"type": "close", "text": "Propose a default."},
-    {"type": "frame", "text": "Name the baseline option."},
-    {"type": "close", "text": "Offer the simplest path."}
+    {
+      "type": "close",
+      "text": "Propose a default."
+    },
+    {
+      "type": "frame",
+      "text": "Name the baseline option."
+    },
+    {
+      "type": "close",
+      "text": "Offer the simplest path."
+    }
   ],
-  "prompt_templates_post": ["The group was stalled and a clear default path was not proposed."],
-  "confidence_threshold": 0.71,
-  "cooldown_seconds": 300,
-  "risk_notes": ["Do not imply the user should unilaterally decide."],
-  "allowed_inferences": ["A default recommendation may reduce friction."]
+  "prompt_templates_post": [
+    "The group was stalled and a clear default path was not proposed."
+  ],
+  "confidence_threshold": 0.4,
+  "cooldown_seconds": 30,
+  "risk_notes": [
+    "Do not imply the user should unilaterally decide."
+  ],
+  "allowed_inferences": [
+    "A default recommendation may reduce friction."
+  ]
 }

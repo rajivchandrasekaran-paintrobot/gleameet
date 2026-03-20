@@ -161,20 +161,93 @@ function observeSpeechIndicators(): void {
     state.speechObserver.disconnect();
   }
 
-  state.speechObserver = new MutationObserver((mutations) => {
-    for (const mutation of mutations) {
-      if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
-        const target = mutation.target as HTMLElement;
-        checkSpeechState(target);
-      }
-    }
-  });
+  // Primary: use Web Audio API to detect microphone activity directly
+  // This is reliable regardless of Google Meet's obfuscated CSS classes
+  startMicrophoneDetection();
 
-  state.speechObserver.observe(document.body, {
-    attributes: true,
-    subtree: true,
-    attributeFilter: ['class', 'data-self-name'],
+  // Minimal DOM observer — only needed for turn-change detection via captions
+  state.speechObserver = new MutationObserver(() => {
+    // intentionally empty — mic detection handles speech_started/ended
   });
+  state.speechObserver.observe(document.body, { childList: true, subtree: false });
+}
+
+let micCheckInterval: ReturnType<typeof setInterval> | null = null;
+let recognition: any = null;
+
+/** Use Web Speech API for speech detection + transcript (no extra mic permission needed) */
+function startMicrophoneDetection(): void {
+  const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    console.warn('[GleaMeet] SpeechRecognition not available');
+    return;
+  }
+
+  function startRecognition() {
+    recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+
+    recognition.onstart = () => {
+      console.log('[GleaMeet] Speech recognition active');
+    };
+
+    recognition.onspeechstart = () => {
+      const now = Date.now();
+      if (!state.userSpeaking && now - state.lastSpeechEmitMs > SPEECH_THROTTLE_MS) {
+        state.userSpeaking = true;
+        state.lastSpeechEmitMs = now;
+        emitEvent('speech_started', { speaker: 'user', offset_ms: now }, 0.9);
+      }
+    };
+
+    recognition.onspeechend = () => {
+      const now = Date.now();
+      if (state.userSpeaking) {
+        state.userSpeaking = false;
+        state.lastSpeechEmitMs = now;
+        emitEvent('speech_ended', { speaker: 'user', offset_ms: now }, 0.9);
+      }
+    };
+
+    recognition.onresult = (event: any) => {
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i];
+        const text = result[0].transcript.trim();
+        if (!text) continue;
+
+        if (result.isFinal) {
+          emitEvent('transcript_segment', {
+            text,
+            speaker: 'user',
+            start_offset_ms: Date.now(),
+            end_offset_ms: Date.now(),
+          }, 0.9);
+        }
+      }
+    };
+
+    recognition.onerror = (event: any) => {
+      if (event.error === 'no-speech') return; // ignore, auto-restarts
+      console.warn('[GleaMeet] Speech recognition error:', event.error);
+    };
+
+    recognition.onend = () => {
+      // Auto-restart — Meet sessions are long
+      setTimeout(() => {
+        try { startRecognition(); } catch(e) {}
+      }, 500);
+    };
+
+    try {
+      recognition.start();
+    } catch(e) {
+      console.warn('[GleaMeet] Could not start speech recognition:', e);
+    }
+  }
+
+  startRecognition();
 }
 
 /** Observe Google Meet captions/subtitles for transcript extraction */
@@ -221,7 +294,7 @@ function observeCaptions(): void {
 
 /** Check if a DOM change indicates speech activity */
 function checkSpeechState(element: HTMLElement): void {
-  const classes = element.className || '';
+  const classes = (typeof element.className === 'string' ? element.className : element.className?.baseVal) || '';
   const now = Date.now();
 
   // Throttle speech events

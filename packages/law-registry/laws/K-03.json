@@ -6,29 +6,68 @@
   "law_name": "Anchoring",
   "description": "Detects early introduction of concrete anchors before exploration.",
   "meeting_relevance": "User may be constraining discussion by stating a concrete anchor too early.",
-  "observable_inputs": ["action_specificity_score", "certainty_language_score", "option_count_presented"],
+  "observable_inputs": [
+    "action_specificity_score",
+    "certainty_language_score",
+    "option_count_presented"
+  ],
   "trigger_type": "event",
   "trigger_logic": {
     "all": [
-      {"feature": "action_specificity_score", "op": "gt", "value": 0.7},
-      {"feature": "certainty_language_score", "op": "gt", "value": 0.6},
-      {"feature": "option_count_presented", "op": "lte", "value": 1}
+      {
+        "feature": "action_specificity_score",
+        "op": "gt",
+        "value": 0.7
+      },
+      {
+        "feature": "certainty_language_score",
+        "op": "gt",
+        "value": 0.6
+      },
+      {
+        "feature": "option_count_presented",
+        "op": "lte",
+        "value": 1
+      }
     ]
   },
   "disconfirming_logic": {
     "any": [
-      {"feature": "option_count_presented", "op": "gt", "value": 1},
-      {"feature": "hedging_language_score", "op": "gt", "value": 0.4}
+      {
+        "feature": "option_count_presented",
+        "op": "gt",
+        "value": 1
+      },
+      {
+        "feature": "hedging_language_score",
+        "op": "gt",
+        "value": 0.4
+      }
     ]
   },
   "prompt_templates_live": [
-    {"type": "frame", "text": "Mark this as provisional."},
-    {"type": "ask", "text": "Invite a second frame."},
-    {"type": "pause", "text": "Don't lock the anchor yet."}
+    {
+      "type": "frame",
+      "text": "Mark this as provisional."
+    },
+    {
+      "type": "ask",
+      "text": "Invite a second frame."
+    },
+    {
+      "type": "pause",
+      "text": "Don't lock the anchor yet."
+    }
   ],
-  "prompt_templates_post": ["You introduced concrete numbers early without marking them as provisional."],
-  "confidence_threshold": 0.74,
-  "cooldown_seconds": 300,
-  "risk_notes": ["Do not imply the user is controlling."],
-  "allowed_inferences": ["User may be unintentionally locking the frame too early."]
+  "prompt_templates_post": [
+    "You introduced concrete numbers early without marking them as provisional."
+  ],
+  "confidence_threshold": 0.4,
+  "cooldown_seconds": 30,
+  "risk_notes": [
+    "Do not imply the user is controlling."
+  ],
+  "allowed_inferences": [
+    "User may be unintentionally locking the frame too early."
+  ]
 }

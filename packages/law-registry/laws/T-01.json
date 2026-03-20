@@ -6,28 +6,62 @@
   "law_name": "Choice Architecture",
   "description": "Detects too many options presented without recommendation hierarchy.",
   "meeting_relevance": "Too many options can increase decision friction.",
-  "observable_inputs": ["option_count_presented", "default_recommendation_present"],
+  "observable_inputs": [
+    "option_count_presented",
+    "default_recommendation_present"
+  ],
   "trigger_type": "rolling_window",
   "trigger_logic": {
     "all": [
-      {"feature": "option_count_presented", "op": "gt", "value": 3},
-      {"feature": "default_recommendation_present", "op": "eq", "value": false}
+      {
+        "feature": "option_count_presented",
+        "op": "gt",
+        "value": 3
+      },
+      {
+        "feature": "default_recommendation_present",
+        "op": "eq",
+        "value": false
+      }
     ]
   },
   "disconfirming_logic": {
     "any": [
-      {"feature": "default_recommendation_present", "op": "eq", "value": true},
-      {"feature": "option_count_presented", "op": "lte", "value": 2}
+      {
+        "feature": "default_recommendation_present",
+        "op": "eq",
+        "value": true
+      },
+      {
+        "feature": "option_count_presented",
+        "op": "lte",
+        "value": 2
+      }
     ]
   },
   "prompt_templates_live": [
-    {"type": "close", "text": "Narrow to two choices."},
-    {"type": "frame", "text": "Structure the options."},
-    {"type": "close", "text": "Recommend a default."}
+    {
+      "type": "close",
+      "text": "Narrow to two choices."
+    },
+    {
+      "type": "frame",
+      "text": "Structure the options."
+    },
+    {
+      "type": "close",
+      "text": "Recommend a default."
+    }
   ],
-  "prompt_templates_post": ["You presented many options without narrowing or recommending a default."],
-  "confidence_threshold": 0.74,
-  "cooldown_seconds": 300,
-  "risk_notes": ["Do not imply user is disorganized."],
-  "allowed_inferences": ["The choice set may be too complex."]
+  "prompt_templates_post": [
+    "You presented many options without narrowing or recommending a default."
+  ],
+  "confidence_threshold": 0.4,
+  "cooldown_seconds": 30,
+  "risk_notes": [
+    "Do not imply user is disorganized."
+  ],
+  "allowed_inferences": [
+    "The choice set may be too complex."
+  ]
 }

@@ -8,13 +8,14 @@
     "react-dom": "^18.2.0"
   },
   "devDependencies": {
+    "@types/chrome": "^0.0.254",
     "@types/react": "^18.2.45",
     "@types/react-dom": "^18.2.18",
-    "@types/chrome": "^0.0.254",
+    "esbuild": "^0.27.4",
     "typescript": "^5.3.3"
   },
   "scripts": {
-    "build": "tsc && cp dist/content/content-script.js public/content.js && cp dist/background/service-worker.js public/background.js && cp dist/popup/index.js public/popup.js",
-    "dev": "tsc --watch"
+    "build": "npx esbuild src/background/service-worker.ts --bundle --outfile=public/background.js --format=esm --platform=browser && npx esbuild src/content/content-script.ts --bundle --outfile=public/content.js --format=iife --platform=browser && npx esbuild src/popup/index.tsx --bundle --outfile=public/popup.js --format=iife --platform=browser",
+    "dev": "npx esbuild src/background/service-worker.ts --bundle --outfile=public/background.js --format=esm --platform=browser --watch & npx esbuild src/content/content-script.ts --bundle --outfile=public/content.js --format=iife --platform=browser --watch & npx esbuild src/popup/index.tsx --bundle --outfile=public/popup.js --format=iife --platform=browser --watch"
   }
 }
