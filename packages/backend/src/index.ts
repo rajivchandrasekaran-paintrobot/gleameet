@@ -22,7 +22,15 @@ const PORT = process.env.PORT || 3001;
 
 // Global middleware
 app.use(helmet());
-app.use(cors({ origin: process.env.CORS_ORIGIN || 'chrome-extension://*' }));
+app.use(cors({
+  origin: (origin, cb) => {
+    if (!origin || (origin && origin.startsWith('chrome-extension://')) || (origin && origin.startsWith('http://localhost'))) {
+      cb(null, true);
+    } else {
+      cb(new Error('Not allowed by CORS'));
+    }
+  },
+}));
 app.use(express.json({ limit: '1mb' }));
 app.use(requestLogger);
 

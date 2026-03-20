@@ -1,16 +1,23 @@
 import Redis from 'ioredis';
 
-/** Redis client for rolling meeting state + cooldown tracking */
-export const redis = new Redis({
-  host: process.env.REDIS_HOST || 'localhost',
-  port: parseInt(process.env.REDIS_PORT || '6379', 10),
-  password: process.env.REDIS_PASSWORD || undefined,
-  keyPrefix: 'gleameet:',
-  retryStrategy(times: number) {
-    const delay = Math.min(times * 50, 2000);
-    return delay;
-  },
-});
+/** Redis client for rolling meeting state + cooldown tracking — supports REDIS_URL (Render) or individual vars (local) */
+export const redis = process.env.REDIS_URL
+  ? new Redis(process.env.REDIS_URL, {
+      keyPrefix: 'gleameet:',
+      tls: process.env.REDIS_URL.startsWith('rediss://') ? { rejectUnauthorized: false } : undefined,
+      retryStrategy(times: number) {
+        return Math.min(times * 50, 2000);
+      },
+    })
+  : new Redis({
+      host: process.env.REDIS_HOST || 'localhost',
+      port: parseInt(process.env.REDIS_PORT || '6379', 10),
+      password: process.env.REDIS_PASSWORD || undefined,
+      keyPrefix: 'gleameet:',
+      retryStrategy(times: number) {
+        return Math.min(times * 50, 2000);
+      },
+    });
 
 redis.on('error', (err) => {
   console.error('[REDIS] Connection error:', err.message);

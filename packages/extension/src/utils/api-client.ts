@@ -7,7 +7,20 @@ import type {
   MeetingEndRequest, MeetingEndResponse,
 } from '@gleameet/shared';
 
-const API_BASE = 'http://localhost:3001';
+const DEFAULT_API_BASE = 'http://localhost:3001';
+
+/** Resolve the backend URL from chrome.storage.sync (falls back to localhost) */
+async function getApiBase(): Promise<string> {
+  return new Promise((resolve) => {
+    if (typeof chrome !== 'undefined' && chrome.storage?.sync) {
+      chrome.storage.sync.get({ backendUrl: DEFAULT_API_BASE }, (items) => {
+        resolve(items.backendUrl || DEFAULT_API_BASE);
+      });
+    } else {
+      resolve(DEFAULT_API_BASE);
+    }
+  });
+}
 
 /** Stored session token for authenticated requests */
 let sessionToken: string | null = null;
@@ -21,7 +34,8 @@ function getHeaders(): HeadersInit {
 }
 
 async function apiRequest<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
+  const apiBase = await getApiBase();
+  const response = await fetch(`${apiBase}${path}`, {
     method,
     headers: getHeaders(),
     body: body ? JSON.stringify(body) : undefined,

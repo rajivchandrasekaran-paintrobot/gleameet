@@ -139,6 +139,20 @@ LLM_MODEL=gpt-4o-mini
 LLM_API_KEY=sk-your-key-here
 ```
 
+## Deploy to Render (Cloud)
+
+Deploy GleaMeet so the Chrome extension works for anyone — no local backend needed.
+
+1. **Push to GitHub** — fork or push this repo to your GitHub account
+2. **Create a Blueprint on Render** — go to [render.com](https://render.com) → **New** → **Blueprint** → connect your repo. Render reads the `render.yaml` and provisions the web service, Postgres, and Redis automatically
+3. **Set LLM environment variables** — in the Render dashboard, open the `gleameet-backend` service → **Environment** → set:
+   - `LLM_BASE_URL` = `https://api.openai.com/v1`
+   - `LLM_MODEL` = `gpt-4o-mini`
+   - `LLM_API_KEY` = your OpenAI API key
+4. **Wait for the first deploy** to finish. Copy the service URL (e.g. `https://gleameet-backend.onrender.com`)
+5. **Configure the extension** — load the extension in Chrome (see below), right-click the extension icon → **Options** → paste the Render URL → **Save**
+6. **Done** — the extension now talks to your cloud backend
+
 ## Loading the Extension
 
 1. Build the extension (or use source directly for development)
