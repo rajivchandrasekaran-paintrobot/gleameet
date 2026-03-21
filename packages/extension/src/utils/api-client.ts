@@ -7,7 +7,7 @@ import type {
   MeetingEndRequest, MeetingEndResponse,
 } from '@gleameet/shared';
 
-const DEFAULT_API_BASE = 'https://gleameet-backend.onrender.com';
+const DEFAULT_API_BASE = 'https://gleameet.onrender.com';
 
 /** Resolve the backend URL from chrome.storage.sync (falls back to localhost) */
 async function getApiBase(): Promise<string> {

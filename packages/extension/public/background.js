@@ -1,5 +1,5 @@
 // src/utils/api-client.ts
-var DEFAULT_API_BASE = "https://gleameet-backend.onrender.com";
+var DEFAULT_API_BASE = "https://gleameet.onrender.com";
 async function getApiBase() {
   return new Promise((resolve) => {
     if (typeof chrome !== "undefined" && chrome.storage?.sync) {
