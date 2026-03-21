@@ -19,14 +19,32 @@ authRouter.post('/session', async (req: Request, res: Response) => {
       return;
     }
 
-    // In production, verify the Google ID token with Google's tokeninfo endpoint.
-    // For v1, we decode a mock payload: the token IS the subject ID.
-    // A real implementation would call:
-    //   const ticket = await client.verifyIdToken({ idToken: google_id_token, audience: CLIENT_ID });
-    //   const { sub, email, name } = ticket.getPayload();
-    const googleSubjectId = google_id_token;
-    const email = `user-${googleSubjectId.slice(0, 8)}@gleameet.dev`;
-    const displayName = `User ${googleSubjectId.slice(0, 8)}`;
+    let googleSubjectId: string;
+    let email: string;
+    let displayName: string;
+
+    try {
+      // Verify token with Google
+      const tokenInfoUrl = `https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=${google_id_token}`;
+      const fetch = (await import("node-fetch")).default;
+      const tokenRes = await fetch(tokenInfoUrl);
+      if (!tokenRes.ok) {
+        res.status(401).json({ error: "Invalid Google token", code: "AUTH_INVALID_TOKEN" });
+        return;
+      }
+      const tokenInfo = await tokenRes.json() as any;
+      if (!tokenInfo.sub) {
+        res.status(401).json({ error: "Invalid Google token", code: "AUTH_INVALID_TOKEN" });
+        return;
+      }
+      googleSubjectId = tokenInfo.sub;
+      email = tokenInfo.email || `user-${tokenInfo.sub.slice(0, 8)}@gleameet.dev`;
+      displayName = tokenInfo.name || `User ${tokenInfo.sub.slice(0, 8)}`;
+    } catch (err) {
+      console.error("[AUTH] Token verification error:", err);
+      res.status(500).json({ error: "Token verification failed", code: "AUTH_ERROR" });
+      return;
+    }
 
     // Upsert user in Postgres
     const userId = await upsertUser(googleSubjectId, email, displayName);
