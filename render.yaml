@@ -2,18 +2,12 @@ services:
   - type: web
     name: gleameet-backend
     runtime: node
-    buildCommand: npm install && npm run build -w packages/shared && npm run build -w packages/law-registry && npm run build -w packages/backend
+    buildCommand: npm install && npm run build -w packages/shared && npm run build -w packages/law-registry && npm run build -w packages/backend && bash scripts/migrate.sh
     startCommand: node packages/backend/dist/index.js
     envVars:
       - key: NODE_ENV
         value: production
-      - key: PG_DATABASE
-        sync: false
-      - key: PG_HOST
-        sync: false
-      - key: PG_USER
-        sync: false
-      - key: PG_PASSWORD
+      - key: DATABASE_URL
         sync: false
       - key: REDIS_URL
         sync: false
