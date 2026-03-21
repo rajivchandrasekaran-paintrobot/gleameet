@@ -376,13 +376,18 @@ function showPrompt(prompt: PromptEvent): void {
   promptEl.className = 'gleameet-prompt';
   promptEl.setAttribute('data-prompt-id', prompt.prompt_id);
 
-  // Header with label and dismiss button
+  // Header with label, law code, and dismiss button
   const header = document.createElement('div');
   header.className = 'gleameet-prompt-header';
 
   const label = document.createElement('span');
   label.className = 'gleameet-prompt-label';
   label.textContent = `Coach \u00b7 ${prompt.prompt_type}`;
+
+  const lawCode = document.createElement('span');
+  lawCode.className = 'gleameet-prompt-law-code';
+  lawCode.textContent = prompt.law_id;
+  lawCode.title = `Law: ${prompt.law_id}`;
 
   const dismissBtn = document.createElement('button');
   dismissBtn.className = 'gleameet-prompt-dismiss';
@@ -391,6 +396,7 @@ function showPrompt(prompt: PromptEvent): void {
   dismissBtn.addEventListener('click', () => dismissPrompt(prompt.prompt_id));
 
   header.appendChild(label);
+  header.appendChild(lawCode);
   header.appendChild(dismissBtn);
 
   // Main prompt text (FR-058: max 12 words)

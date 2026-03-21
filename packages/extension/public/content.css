@@ -40,6 +40,18 @@
   color: #0066cc;
 }
 
+.gleameet-prompt-law-code {
+  font-size: 10px;
+  font-weight: 700;
+  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+  color: #ffffff;
+  background: #0066cc;
+  border-radius: 4px;
+  padding: 1px 6px;
+  letter-spacing: 0.3px;
+  flex-shrink: 0;
+}
+
 .gleameet-prompt-dismiss {
   background: none;
   border: none;

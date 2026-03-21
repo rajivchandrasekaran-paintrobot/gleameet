@@ -244,12 +244,17 @@
     const label = document.createElement("span");
     label.className = "gleameet-prompt-label";
     label.textContent = `Coach \xB7 ${prompt.prompt_type}`;
+    const lawCode = document.createElement("span");
+    lawCode.className = "gleameet-prompt-law-code";
+    lawCode.textContent = prompt.law_id;
+    lawCode.title = `Law: ${prompt.law_id}`;
     const dismissBtn = document.createElement("button");
     dismissBtn.className = "gleameet-prompt-dismiss";
     dismissBtn.textContent = "\xD7";
     dismissBtn.title = "Dismiss";
     dismissBtn.addEventListener("click", () => dismissPrompt(prompt.prompt_id));
     header.appendChild(label);
+    header.appendChild(lawCode);
     header.appendChild(dismissBtn);
     const text = document.createElement("div");
     text.className = "gleameet-prompt-text";
