@@ -6,8 +6,13 @@
   "permissions": [
     "activeTab",
     "storage",
-    "alarms"
+    "alarms",
+    "identity"
   ],
+  "oauth2": {
+    "client_id": "REPLACE_WITH_GOOGLE_OAUTH_CLIENT_ID.apps.googleusercontent.com",
+    "scopes": ["openid", "email", "profile"]
+  },
   "host_permissions": [
     "https://meet.google.com/*"
   ],

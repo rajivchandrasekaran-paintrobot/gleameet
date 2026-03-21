@@ -46,15 +46,22 @@ export const Popup: React.FC = () => {
   }, []);
 
   const handleSignIn = () => {
-    // In production, this would trigger Google OAuth flow via chrome.identity.
-    // For v1, use a mock token.
-    chrome.runtime.sendMessage({
-      type: 'AUTHENTICATE',
-      googleIdToken: `mock-user-${Date.now()}`,
-    }, (response) => {
-      if (response?.ok) {
-        setState(prev => ({ ...prev, authenticated: true, userId: response.userId }));
+    chrome.identity.getAuthToken({ interactive: true }, (token) => {
+      if (chrome.runtime.lastError || !token) {
+        console.error("[GleaMeet] OAuth error:", chrome.runtime.lastError?.message);
+        setState(prev => ({ ...prev, status: "error" }));
+        return;
       }
+      chrome.runtime.sendMessage({
+        type: "AUTHENTICATE",
+        googleIdToken: token,
+      }, (response) => {
+        if (response?.ok) {
+          setState(prev => ({ ...prev, authenticated: true, userId: response.userId }));
+        } else {
+          setState(prev => ({ ...prev, status: "error" }));
+        }
+      });
     });
   };
 
