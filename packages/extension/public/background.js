@@ -1,5 +1,5 @@
 // src/utils/api-client.ts
-var DEFAULT_API_BASE = "http://localhost:3001";
+var DEFAULT_API_BASE = "https://gleameet-backend.onrender.com";
 async function getApiBase() {
   return new Promise((resolve) => {
     if (typeof chrome !== "undefined" && chrome.storage?.sync) {
@@ -119,7 +119,16 @@ async function handleMessage(message) {
         sessionToken: message.token,
         userId: message.userId
       });
+      if (message.backendUrl) {
+        chrome.storage.sync.set({ backendUrl: message.backendUrl });
+      }
       return { ok: true };
+    case "GET_BACKEND_URL": {
+      const data = await new Promise((resolve) => {
+        chrome.storage.sync.get({ backendUrl: "" }, resolve);
+      });
+      return { backendUrl: data.backendUrl || "" };
+    }
     case "AUTHENTICATE":
       return handleAuthenticate(message.googleIdToken);
     case "ACK_PROMPT":

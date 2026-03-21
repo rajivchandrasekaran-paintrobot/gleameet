@@ -168,6 +168,16 @@ export const Popup: React.FC = () => {
       <div className="privacy-note">
         Coaching is visible only to you
       </div>
+
+      <div style={{ textAlign: 'center', marginTop: '8px' }}>
+        <a
+          href="#"
+          onClick={(e) => { e.preventDefault(); chrome.runtime.openOptionsPage(); }}
+          style={{ fontSize: '12px', color: '#6366f1', textDecoration: 'none', cursor: 'pointer' }}
+        >
+          ⚙ Settings
+        </a>
+      </div>
     </div>
   );
 };

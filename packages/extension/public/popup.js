@@ -24591,7 +24591,19 @@
         state.status === "off" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { style: { fontSize: "13px", color: "#6b6b80", textAlign: "center" }, children: "Join a Google Meet call to start coaching" }),
         state.status === "error" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { style: { fontSize: "13px", color: "#cc0000", textAlign: "center" }, children: "Connection error. Please try again." })
       ] }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "privacy-note", children: "Coaching is visible only to you" })
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "privacy-note", children: "Coaching is visible only to you" }),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { textAlign: "center", marginTop: "8px" }, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+        "a",
+        {
+          href: "#",
+          onClick: (e) => {
+            e.preventDefault();
+            chrome.runtime.openOptionsPage();
+          },
+          style: { fontSize: "12px", color: "#6366f1", textDecoration: "none", cursor: "pointer" },
+          children: "\u2699 Settings"
+        }
+      ) })
     ] });
   };
 

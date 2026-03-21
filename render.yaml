@@ -2,35 +2,24 @@ services:
   - type: web
     name: gleameet-backend
     runtime: node
-    plan: free
-    buildCommand: npm install && npm run build:shared && npm run build:law-registry && npm run build:backend
+    buildCommand: npm install && npm run build -w packages/shared && npm run build -w packages/law-registry && npm run build -w packages/backend
     startCommand: node packages/backend/dist/index.js
-    healthCheckPath: /health
     envVars:
       - key: NODE_ENV
         value: production
-      - key: DATABASE_URL
-        fromDatabase:
-          name: gleameet-db
-          property: connectionString
+      - key: PG_DATABASE
+        sync: false
+      - key: PG_HOST
+        sync: false
+      - key: PG_USER
+        sync: false
+      - key: PG_PASSWORD
+        sync: false
       - key: REDIS_URL
-        fromService:
-          name: gleameet-redis
-          type: redis
-          property: connectionString
+        sync: false
+      - key: LLM_API_KEY
+        sync: false
       - key: LLM_BASE_URL
         sync: false
       - key: LLM_MODEL
         sync: false
-      - key: LLM_API_KEY
-        sync: false
-
-databases:
-  - name: gleameet-db
-    plan: free
-    databaseName: gleameet
-    user: gleameet
-
-redis:
-  - name: gleameet-redis
-    plan: free

@@ -87,7 +87,18 @@ async function handleMessage(message: any): Promise<any> {
         sessionToken: message.token,
         userId: message.userId,
       });
+      // Persist backend URL if provided
+      if (message.backendUrl) {
+        chrome.storage.sync.set({ backendUrl: message.backendUrl });
+      }
       return { ok: true };
+
+    case 'GET_BACKEND_URL': {
+      const data = await new Promise<any>((resolve) => {
+        chrome.storage.sync.get({ backendUrl: '' }, resolve);
+      });
+      return { backendUrl: data.backendUrl || '' };
+    }
 
     case 'AUTHENTICATE':
       return handleAuthenticate(message.googleIdToken);
