@@ -115,50 +115,52 @@ export const Popup: React.FC = () => {
 
       {/* Controls */}
       <div className="controls">
-        {!state.authenticated && (
+        {!state.authenticated ? (
           <button className="btn btn-primary" onClick={handleSignIn}>
             Sign In
           </button>
-        )}
-
-        {state.authenticated && state.status === 'ready' && (
-          <button className="btn btn-primary" onClick={handleStartCoaching}>
-            Enable Coaching
-          </button>
-        )}
-
-        {state.status === 'active' && (
+        ) : (
           <>
-            <button className="btn btn-secondary" onClick={handleMute}>
-              Mute Prompts
-            </button>
-            <button className="btn btn-danger" onClick={handleStopCoaching}>
-              Stop Coaching
-            </button>
+            {state.status === 'ready' && (
+              <button className="btn btn-primary" onClick={handleStartCoaching}>
+                Enable Coaching
+              </button>
+            )}
+
+            {state.status === 'active' && (
+              <>
+                <button className="btn btn-secondary" onClick={handleMute}>
+                  Mute Prompts
+                </button>
+                <button className="btn btn-danger" onClick={handleStopCoaching}>
+                  Stop Coaching
+                </button>
+              </>
+            )}
+
+            {state.status === 'muted' && (
+              <>
+                <button className="btn btn-primary" onClick={handleUnmute}>
+                  Resume Prompts
+                </button>
+                <button className="btn btn-danger" onClick={handleStopCoaching}>
+                  Stop Coaching
+                </button>
+              </>
+            )}
+
+            {state.status === 'off' && (
+              <p style={{ fontSize: '13px', color: '#6b6b80', textAlign: 'center' }}>
+                Join a Google Meet call to start coaching
+              </p>
+            )}
+
+            {state.status === 'error' && (
+              <p style={{ fontSize: '13px', color: '#cc0000', textAlign: 'center' }}>
+                Connection error. Please try again.
+              </p>
+            )}
           </>
-        )}
-
-        {state.status === 'muted' && (
-          <>
-            <button className="btn btn-primary" onClick={handleUnmute}>
-              Resume Prompts
-            </button>
-            <button className="btn btn-danger" onClick={handleStopCoaching}>
-              Stop Coaching
-            </button>
-          </>
-        )}
-
-        {state.authenticated && state.status === 'off' && (
-          <p style={{ fontSize: '13px', color: '#6b6b80', textAlign: 'center' }}>
-            Join a Google Meet call to start coaching
-          </p>
-        )}
-
-        {state.status === 'error' && (
-          <p style={{ fontSize: '13px', color: '#cc0000', textAlign: 'center' }}>
-            Connection error. Please try again.
-          </p>
         )}
       </div>
 

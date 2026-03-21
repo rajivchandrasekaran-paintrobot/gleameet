@@ -24578,9 +24578,8 @@
           "..."
         ] })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "controls", children: [
-        !state.authenticated && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-primary", onClick: handleSignIn, children: "Sign In" }),
-        state.authenticated && state.status === "ready" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-primary", onClick: handleStartCoaching, children: "Enable Coaching" }),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "controls", children: !state.authenticated ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-primary", onClick: handleSignIn, children: "Sign In" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
+        state.status === "ready" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-primary", onClick: handleStartCoaching, children: "Enable Coaching" }),
         state.status === "active" && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
           /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-secondary", onClick: handleMute, children: "Mute Prompts" }),
           /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-danger", onClick: handleStopCoaching, children: "Stop Coaching" })
@@ -24589,9 +24588,9 @@
           /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-primary", onClick: handleUnmute, children: "Resume Prompts" }),
           /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-danger", onClick: handleStopCoaching, children: "Stop Coaching" })
         ] }),
-        state.authenticated && state.status === "off" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { style: { fontSize: "13px", color: "#6b6b80", textAlign: "center" }, children: "Join a Google Meet call to start coaching" }),
+        state.status === "off" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { style: { fontSize: "13px", color: "#6b6b80", textAlign: "center" }, children: "Join a Google Meet call to start coaching" }),
         state.status === "error" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { style: { fontSize: "13px", color: "#cc0000", textAlign: "center" }, children: "Connection error. Please try again." })
-      ] }),
+      ] }) }),
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "privacy-note", children: "Coaching is visible only to you" })
     ] });
   };

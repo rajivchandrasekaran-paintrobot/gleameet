@@ -46,29 +46,21 @@ const SPEECH_THROTTLE_MS = 500;
 
 /** Detect if we're in an active Google Meet session */
 function detectMeeting(): boolean {
-  // Check URL pattern first (most reliable)
+  // URL is the most reliable signal — if we're on a meet.google.com/<code> page, we're in a meeting.
+  // Meet's DOM attributes and jscontroller values change frequently; don't rely on them.
   const url = window.location.href;
-  if (!/meet\.google\.com\/[a-z]{3}-[a-z]{4}-[a-z]{3}/i.test(url)) {
+  if (!/meet\.google\.com\/[a-z]+-[a-z]+-[a-z]+/i.test(url)) {
     return false;
   }
 
-  // Check for Google Meet active meeting DOM indicators
-  const meetIndicators = [
-    '[data-meeting-code]',       // Meeting code attribute
-    '[data-call-id]',            // Active call ID
-    '[jscontroller="kAPMuc"]',   // Meet call container
-    '[data-self-name]',          // Self-view with user name
-    'div[data-allocation-index]', // Video grid tiles
-  ];
+  // Confirm the page has actually loaded (not just the lobby pre-join screen)
+  // Look for any video element (self-view always present once joined) or the leave button
+  const hasVideo = !!document.querySelector('video');
+  const hasLeaveBtn = !!document.querySelector('[data-is-muted]') ||
+                      !!document.querySelector('[aria-label*="Leave"]') ||
+                      !!document.querySelector('[aria-label*="leave"]');
 
-  for (const selector of meetIndicators) {
-    if (document.querySelector(selector)) return true;
-  }
-
-  // Fallback: check for the meeting toolbar (bottom bar with mic/camera controls)
-  const toolbar = document.querySelector('[jscontroller="KnNaaB"]') ||
-                  document.querySelector('[data-tooltip-id="tt-c9"]');
-  return !!toolbar;
+  return hasVideo || hasLeaveBtn;
 }
 
 /** Start observing the DOM for meeting lifecycle changes */

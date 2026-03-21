@@ -39,26 +39,12 @@
   var SPEECH_THROTTLE_MS = 500;
   function detectMeeting() {
     const url = window.location.href;
-    if (!/meet\.google\.com\/[a-z]{3}-[a-z]{4}-[a-z]{3}/i.test(url)) {
+    if (!/meet\.google\.com\/[a-z]+-[a-z]+-[a-z]+/i.test(url)) {
       return false;
     }
-    const meetIndicators = [
-      "[data-meeting-code]",
-      // Meeting code attribute
-      "[data-call-id]",
-      // Active call ID
-      '[jscontroller="kAPMuc"]',
-      // Meet call container
-      "[data-self-name]",
-      // Self-view with user name
-      "div[data-allocation-index]"
-      // Video grid tiles
-    ];
-    for (const selector of meetIndicators) {
-      if (document.querySelector(selector)) return true;
-    }
-    const toolbar = document.querySelector('[jscontroller="KnNaaB"]') || document.querySelector('[data-tooltip-id="tt-c9"]');
-    return !!toolbar;
+    const hasVideo = !!document.querySelector("video");
+    const hasLeaveBtn = !!document.querySelector("[data-is-muted]") || !!document.querySelector('[aria-label*="Leave"]') || !!document.querySelector('[aria-label*="leave"]');
+    return hasVideo || hasLeaveBtn;
   }
   function startMeetingDetection() {
     if (detectMeeting() && !state.meetingDetected) {
