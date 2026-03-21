@@ -139,6 +139,15 @@ LLM_MODEL=gpt-4o-mini
 LLM_API_KEY=sk-your-key-here
 ```
 
+## Web-Hosted Deployment
+
+GleaMeet is designed to work like Grammarly — the backend runs in the cloud and users only install the Chrome extension. No local server needed.
+
+1. **Deploy backend to Render** using the included `render.yaml` (see below)
+2. **Set environment variables** in the Render dashboard (`PG_*`, `REDIS_URL`, `LLM_*`)
+3. **Install the extension** from the Chrome Web Store (or load unpacked from `packages/extension/public/`)
+4. **Extension auto-connects** to the hosted backend at `https://gleameet-backend.onrender.com` — change the URL in the extension's Options page if self-hosting
+
 ## Deploy to Render (Cloud)
 
 Deploy GleaMeet so the Chrome extension works for anyone — no local backend needed.

@@ -1,4 +1,4 @@
-const DEFAULT_BACKEND_URL = 'http://localhost:3001';
+const DEFAULT_BACKEND_URL = 'https://gleameet-backend.onrender.com';
 
 document.addEventListener('DOMContentLoaded', () => {
   const input = document.getElementById('backendUrl');

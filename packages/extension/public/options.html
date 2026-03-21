@@ -9,24 +9,33 @@
       max-width: 480px;
       margin: 40px auto;
       padding: 0 20px;
-      color: #333;
+      color: #1e1e2e;
+      background: #f8f8fc;
     }
     h1 {
-      font-size: 20px;
+      font-size: 22px;
+      color: #4f46e5;
       margin-bottom: 24px;
     }
     label {
       display: block;
       font-weight: 600;
       margin-bottom: 6px;
+      color: #333;
     }
     input[type="url"] {
       width: 100%;
-      padding: 8px 10px;
+      padding: 10px 12px;
       font-size: 14px;
-      border: 1px solid #ccc;
-      border-radius: 4px;
+      border: 1px solid #c7c7d4;
+      border-radius: 6px;
       box-sizing: border-box;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    input[type="url"]:focus {
+      border-color: #4f46e5;
+      box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.15);
     }
     .hint {
       font-size: 12px;
@@ -35,27 +44,30 @@
     }
     button {
       margin-top: 16px;
-      padding: 8px 20px;
+      padding: 10px 24px;
       font-size: 14px;
-      background: #4285f4;
+      font-weight: 600;
+      background: #4f46e5;
       color: #fff;
       border: none;
-      border-radius: 4px;
+      border-radius: 6px;
       cursor: pointer;
+      transition: background 0.2s;
     }
-    button:hover { background: #3367d6; }
+    button:hover { background: #4338ca; }
     #status {
       margin-top: 12px;
       font-size: 13px;
-      color: #0b8043;
+      color: #16a34a;
+      font-weight: 500;
     }
   </style>
 </head>
 <body>
   <h1>GleaMeet Settings</h1>
   <label for="backendUrl">Backend URL</label>
-  <input type="url" id="backendUrl" placeholder="http://localhost:3001">
-  <div class="hint">For cloud: paste your Render URL, e.g. https://gleameet-backend.onrender.com</div>
+  <input type="url" id="backendUrl" placeholder="https://gleameet-backend.onrender.com">
+  <div class="hint">Leave blank for the default hosted backend. Change only if self-hosting.</div>
   <button id="save">Save</button>
   <div id="status"></div>
   <script src="options.js"></script>

@@ -25,12 +25,17 @@ const PORT = process.env.PORT || 3001;
 app.use(helmet());
 app.use(cors({
   origin: (origin, cb) => {
-    if (!origin || (origin && origin.startsWith('chrome-extension://')) || (origin && origin.startsWith('http://localhost'))) {
+    if (
+      !origin ||
+      origin.startsWith('chrome-extension://') ||
+      origin.startsWith('http://localhost')
+    ) {
       cb(null, true);
     } else {
       cb(new Error('Not allowed by CORS'));
     }
   },
+  credentials: true,
 }));
 app.use(express.json({ limit: '1mb' }));
 app.use(requestLogger);
