@@ -21,13 +21,28 @@ export const Popup: React.FC = () => {
     // Get current status from background
     chrome.runtime.sendMessage({ type: 'GET_STATUS' }, (response) => {
       if (response) {
+        const isAuthenticated = response.authenticated || false;
         setState(prev => ({
           ...prev,
           status: response.status || 'off',
           meetingSessionId: response.meetingSessionId || null,
-          authenticated: response.authenticated || false,
+          authenticated: isAuthenticated,
           userId: response.userId || null,
         }));
+
+        // If not yet authenticated, try silently — works if Chrome profile already has consent
+        if (!isAuthenticated) {
+          chrome.identity.getAuthToken({ interactive: false }, (token) => {
+            if (!chrome.runtime.lastError && token) {
+              chrome.runtime.sendMessage({ type: 'AUTHENTICATE', googleIdToken: token }, (res) => {
+                if (res?.ok) {
+                  setState(prev => ({ ...prev, authenticated: true, userId: res.userId }));
+                }
+              });
+            }
+            // If it fails silently, user will see the Sign In button as fallback
+          });
+        }
       }
     });
 
