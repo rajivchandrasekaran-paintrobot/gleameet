@@ -24503,13 +24503,25 @@
     (0, import_react.useEffect)(() => {
       chrome.runtime.sendMessage({ type: "GET_STATUS" }, (response) => {
         if (response) {
+          const isAuthenticated = response.authenticated || false;
           setState((prev) => ({
             ...prev,
             status: response.status || "off",
             meetingSessionId: response.meetingSessionId || null,
-            authenticated: response.authenticated || false,
+            authenticated: isAuthenticated,
             userId: response.userId || null
           }));
+          if (!isAuthenticated) {
+            chrome.identity.getAuthToken({ interactive: false }, (token) => {
+              if (!chrome.runtime.lastError && token) {
+                chrome.runtime.sendMessage({ type: "AUTHENTICATE", googleIdToken: token }, (res) => {
+                  if (res?.ok) {
+                    setState((prev) => ({ ...prev, authenticated: true, userId: res.userId }));
+                  }
+                });
+              }
+            });
+          }
         }
       });
       const listener = (message) => {
