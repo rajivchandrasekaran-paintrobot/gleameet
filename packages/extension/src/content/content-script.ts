@@ -23,6 +23,8 @@ interface ContentState {
   captionObserver: MutationObserver | null;
   userSpeaking: boolean;
   lastSpeechEmitMs: number;
+  eventsEmitted: number;
+  diagnosticInterval: ReturnType<typeof setInterval> | null;
 }
 
 const state: ContentState = {
@@ -37,7 +39,22 @@ const state: ContentState = {
   captionObserver: null,
   userSpeaking: false,
   lastSpeechEmitMs: 0,
+  eventsEmitted: 0,
+  diagnosticInterval: null,
 };
+
+// Caption selectors — ordered by likelihood, all tried on every DOM mutation
+const CAPTION_SELECTORS = [
+  '[jsname="tgaKEf"]',                  // Current Meet caption text (2025)
+  '[jsname="YSxPC"]',                   // Speaker name
+  'div[class*="TBMuR"] span',           // Caption container variant
+  'div[class*="CNusmb"] span',          // Caption block variant
+  'div.a4cQT span',                     // Captions area
+  '[data-message-id] span',             // Timestamped captions
+  '[data-speaker-id] span',             // Speaker-tagged spans
+  '[jscontroller="D1tHje"] span',       // Older Meet (fallback)
+  'div[class*="iOzk7"] span',           // Older Meet (fallback)
+];
 
 // Throttle speech events to avoid flooding (max one per 500ms)
 const SPEECH_THROTTLE_MS = 500;
@@ -119,6 +136,10 @@ function onMeetingEnded(): void {
     state.captionObserver.disconnect();
     state.captionObserver = null;
   }
+  if (state.diagnosticInterval) {
+    clearInterval(state.diagnosticInterval);
+    state.diagnosticInterval = null;
+  }
 
   // Clean up UI
   removeOverlay();
@@ -145,6 +166,12 @@ function startSignalCapture(): void {
     new_state: 'active',
     reason: 'coaching_enabled',
   });
+
+  // Diagnostic log every 10s
+  state.diagnosticInterval = setInterval(() => {
+    const captionEls = CAPTION_SELECTORS.flatMap(sel => Array.from(document.querySelectorAll(sel)));
+    console.log(`[GleaMeet] Diagnostics: events_emitted=${state.eventsEmitted}, speech_active=${state.userSpeaking}, recognition_running=${!!recognition}, caption_elements_found=${captionEls.length}`);
+  }, 10000);
 }
 
 /** Observe Google Meet DOM for speech/participant indicators */
@@ -223,6 +250,10 @@ function startMicrophoneDetection(): void {
     recognition.onerror = (event: any) => {
       if (event.error === 'no-speech') return; // ignore, auto-restarts
       console.warn('[GleaMeet] Speech recognition error:', event.error);
+      // Restart on recoverable errors
+      if (['audio-capture', 'network', 'aborted'].includes(event.error)) {
+        setTimeout(() => { try { startRecognition(); } catch(e) {} }, 1000);
+      }
     };
 
     recognition.onend = () => {
@@ -248,25 +279,28 @@ function observeCaptions(): void {
     state.captionObserver.disconnect();
   }
 
-  // Watch for caption container appearing
+  // Watch for caption container appearing — try all known selectors
   state.captionObserver = new MutationObserver(() => {
-    // Google Meet captions appear in elements with specific containers
-    const captionContainers = document.querySelectorAll(
-      '[jscontroller="D1tHje"] span, ' +            // Caption text spans
-      'div[class*="iOzk7"] span, ' +                // Alternative caption container
-      '[data-speaker-id] span'                       // Speaker-tagged spans
-    );
+    // Collect elements from all known caption selectors
+    const seen = new Set<Element>();
+    for (const selector of CAPTION_SELECTORS) {
+      try {
+        document.querySelectorAll(selector).forEach(el => seen.add(el));
+      } catch(e) { /* invalid selector, skip */ }
+    }
 
-    for (const el of captionContainers) {
-      const text = el.textContent?.trim();
+    for (const el of seen) {
+      const text = (el as HTMLElement).textContent?.trim();
       if (text && text.length > 2 && !el.getAttribute('data-gleameet-captured')) {
         el.setAttribute('data-gleameet-captured', '1');
 
-        // Determine speaker from parent context
-        const speakerEl = el.closest('[data-speaker-id]') || el.closest('[data-self-name]');
-        const isSelf = !!el.closest('[data-self-name]');
+        // Determine speaker — self if in a self-labeled container
+        const isSelf = !!el.closest('[data-self-name]') ||
+                       !!el.closest('[data-is-self="true"]') ||
+                       !!el.closest('[aria-label*="You"]');
         const speaker = isSelf ? 'user' : 'other';
 
+        console.log(`[GleaMeet] Caption captured (${speaker}): ${text.slice(0, 60)}`);
         emitEvent('transcript_segment', {
           text,
           speaker,
@@ -292,11 +326,13 @@ function checkSpeechState(element: HTMLElement): void {
   // Throttle speech events
   if (now - state.lastSpeechEmitMs < SPEECH_THROTTLE_MS) return;
 
-  // Detect user speaking (self-view with active audio indicator)
-  // Google Meet uses several CSS classes for speaking state
+  // Detect user speaking — try both CSS classes and data attributes
   const isSpeakingIndicator = classes.includes('IisKdb') ||
                               classes.includes('gLhFNb') ||
-                              classes.includes('Gv1mTb-aTv5jf');
+                              classes.includes('Gv1mTb-aTv5jf') ||
+                              classes.includes('VfPpkd-Bz112c') ||
+                              (element as HTMLElement).hasAttribute('data-audio-level') ||
+                              element.closest('[data-is-muted="false"]') !== null;
 
   const isSelfView = !!element.closest('[data-self-name]') ||
                      !!element.closest('[data-is-self="true"]');
@@ -333,6 +369,8 @@ function emitEvent(
   captureConfidence: number | null = null
 ): void {
   if (!state.meetingSessionId || !state.userId) return;
+
+  state.eventsEmitted++;
 
   const event = createEvent(
     state.meetingSessionId,

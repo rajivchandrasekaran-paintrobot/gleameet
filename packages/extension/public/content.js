@@ -34,8 +34,30 @@
     speechObserver: null,
     captionObserver: null,
     userSpeaking: false,
-    lastSpeechEmitMs: 0
+    lastSpeechEmitMs: 0,
+    eventsEmitted: 0,
+    diagnosticInterval: null
   };
+  var CAPTION_SELECTORS = [
+    '[jsname="tgaKEf"]',
+    // Current Meet caption text (2025)
+    '[jsname="YSxPC"]',
+    // Speaker name
+    'div[class*="TBMuR"] span',
+    // Caption container variant
+    'div[class*="CNusmb"] span',
+    // Caption block variant
+    "div.a4cQT span",
+    // Captions area
+    "[data-message-id] span",
+    // Timestamped captions
+    "[data-speaker-id] span",
+    // Speaker-tagged spans
+    '[jscontroller="D1tHje"] span',
+    // Older Meet (fallback)
+    'div[class*="iOzk7"] span'
+    // Older Meet (fallback)
+  ];
   var SPEECH_THROTTLE_MS = 500;
   function detectMeeting() {
     const url = window.location.href;
@@ -87,6 +109,10 @@
       state.captionObserver.disconnect();
       state.captionObserver = null;
     }
+    if (state.diagnosticInterval) {
+      clearInterval(state.diagnosticInterval);
+      state.diagnosticInterval = null;
+    }
     removeOverlay();
     removeStatusIndicator();
     console.log("[GleaMeet] Meeting ended");
@@ -100,6 +126,10 @@
       new_state: "active",
       reason: "coaching_enabled"
     });
+    state.diagnosticInterval = setInterval(() => {
+      const captionEls = CAPTION_SELECTORS.flatMap((sel) => Array.from(document.querySelectorAll(sel)));
+      console.log(`[GleaMeet] Diagnostics: events_emitted=${state.eventsEmitted}, speech_active=${state.userSpeaking}, recognition_running=${!!recognition}, caption_elements_found=${captionEls.length}`);
+    }, 1e4);
   }
   function observeSpeechIndicators() {
     if (state.speechObserver) {
@@ -159,6 +189,14 @@
       recognition.onerror = (event) => {
         if (event.error === "no-speech") return;
         console.warn("[GleaMeet] Speech recognition error:", event.error);
+        if (["audio-capture", "network", "aborted"].includes(event.error)) {
+          setTimeout(() => {
+            try {
+              startRecognition();
+            } catch (e) {
+            }
+          }, 1e3);
+        }
       };
       recognition.onend = () => {
         setTimeout(() => {
@@ -181,17 +219,20 @@
       state.captionObserver.disconnect();
     }
     state.captionObserver = new MutationObserver(() => {
-      const captionContainers = document.querySelectorAll(
-        '[jscontroller="D1tHje"] span, div[class*="iOzk7"] span, [data-speaker-id] span'
-        // Speaker-tagged spans
-      );
-      for (const el of captionContainers) {
+      const seen = /* @__PURE__ */ new Set();
+      for (const selector of CAPTION_SELECTORS) {
+        try {
+          document.querySelectorAll(selector).forEach((el) => seen.add(el));
+        } catch (e) {
+        }
+      }
+      for (const el of seen) {
         const text = el.textContent?.trim();
         if (text && text.length > 2 && !el.getAttribute("data-gleameet-captured")) {
           el.setAttribute("data-gleameet-captured", "1");
-          const speakerEl = el.closest("[data-speaker-id]") || el.closest("[data-self-name]");
-          const isSelf = !!el.closest("[data-self-name]");
+          const isSelf = !!el.closest("[data-self-name]") || !!el.closest('[data-is-self="true"]') || !!el.closest('[aria-label*="You"]');
           const speaker = isSelf ? "user" : "other";
+          console.log(`[GleaMeet] Caption captured (${speaker}): ${text.slice(0, 60)}`);
           emitEvent("transcript_segment", {
             text,
             speaker,
@@ -209,6 +250,7 @@
   }
   function emitEvent(eventType, payload, captureConfidence = null) {
     if (!state.meetingSessionId || !state.userId) return;
+    state.eventsEmitted++;
     const event = createEvent(
       state.meetingSessionId,
       state.userId,
