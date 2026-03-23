@@ -131,6 +131,13 @@ CREATE TABLE IF NOT EXISTS post_meeting_reports (
     timeline_json JSONB NOT NULL DEFAULT '[]'::jsonb
 );
 
+-- Meeting transcripts (aggregated at end of meeting)
+CREATE TABLE IF NOT EXISTS meeting_transcripts (
+    meeting_session_id UUID PRIMARY KEY REFERENCES meeting_sessions(meeting_session_id) ON DELETE CASCADE,
+    transcript_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    saved_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Deletion audit (FR-077 through FR-078)
 CREATE TABLE IF NOT EXISTS deletion_audits (
     deletion_audit_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

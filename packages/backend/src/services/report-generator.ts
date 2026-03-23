@@ -1,4 +1,4 @@
-import { PostMeetingReport, ReportInsight, TimelineEntry } from '@gleameet/shared';
+import { PostMeetingReport, ReportInsight, TimelineEntry, RecommendedAction } from '@gleameet/shared';
 import { MeetingState } from '../db/redis';
 import { getLawTriggersForSession, getPromptsForSession, insertReport } from '../db/queries';
 import { loadLawById } from '@gleameet/law-registry';
@@ -109,7 +109,7 @@ export async function generateReport(
   // --- Attempt LLM-generated interpretive content ---
   let strengths: string[];
   let growthAreas: string[];
-  let recommendedActions: string[];
+  let recommendedActions: RecommendedAction[];
   let modelInterpretationInsights: ReportInsight[];
 
   try {
@@ -210,7 +210,7 @@ export async function generateReport(
 interface LLMInterpretiveResult {
   strengths: string[];
   growth_areas: string[];
-  recommended_actions: string[];
+  recommended_actions: { action: string; reason: string }[];
   insights: { text: string; law_id: string | null }[];
 }
 
@@ -252,10 +252,12 @@ ${lawSummary}
 Based on the data above, return a JSON object with:
 - "strengths": array of up to 3 strings — what the user did well
 - "growth_areas": array of up to 3 strings — areas for improvement
-- "recommended_actions": array of up to 5 strings — specific actionable recommendations
+- "recommended_actions": array of up to 5 objects, each with:
+  - "action": a clear, specific action the user should take (e.g. "Pause for 2 seconds before responding to let others finish")
+  - "reason": a brief explanation of WHY this recommendation was made, citing the specific behavioral data that triggered it (e.g. "You interrupted 4 times in the last 10 minutes" or "Your hedging ratio was 0.35, above the recommended 0.30")
 - "insights": array of objects with "text" (string) and "law_id" (string or null) — interpretive insights about behavioral patterns observed, referencing law_ids where relevant
 
-Be specific, actionable, and encouraging. Reference the actual data values. Do not invent data not provided.
+Be specific, actionable, and encouraging. Each recommendation MUST cite the exact data values that motivated it. Do not invent data not provided.
 
 Return ONLY valid JSON, no markdown formatting or extra text.`;
 
@@ -285,7 +287,10 @@ Return ONLY valid JSON, no markdown formatting or extra text.`;
   return {
     strengths: parsed.strengths.slice(0, 3),
     growth_areas: parsed.growth_areas.slice(0, 3),
-    recommended_actions: parsed.recommended_actions.slice(0, 5),
+    recommended_actions: parsed.recommended_actions.slice(0, 5).map(r => ({
+      action: String(r.action || r),
+      reason: String(r.reason || ''),
+    })),
     insights: parsed.insights.map(i => ({
       text: String(i.text),
       law_id: i.law_id ? String(i.law_id) : null,
@@ -302,7 +307,7 @@ function generateInterpretiveContentFallback(
 ): {
   strengths: string[];
   growthAreas: string[];
-  recommendedActions: string[];
+  recommendedActions: RecommendedAction[];
   modelInterpretationInsights: ReportInsight[];
 } {
   // Model interpretations from law triggers
@@ -380,21 +385,45 @@ function generateInterpretiveContentFallback(
     growthAreas.push('Acknowledge others\' points before offering your perspective — builds psychological safety.');
   }
 
-  // Recommended actions
-  const recommendedActions: string[] = [];
+  // Recommended actions — each includes a specific action and the data that triggered it
+  const recommendedActions: RecommendedAction[] = [];
   if (growthAreas.length > 0) {
-    recommendedActions.push(`Focus on: ${growthAreas[0].split(' — ')[0]}`);
+    const topArea = growthAreas[0].split(' — ')[0];
+    recommendedActions.push({
+      action: `Focus on improving: ${topArea}`,
+      reason: growthAreas[0],
+    });
   }
   if (state.hedging_hits > state.transcript_segment_count * 0.3) {
-    recommendedActions.push('Practice using more decisive language to project confidence.');
+    const ratio = (state.hedging_hits / state.transcript_segment_count).toFixed(2);
+    recommendedActions.push({
+      action: 'Practice using more decisive language to project confidence.',
+      reason: `Your hedging language ratio was ${ratio} (${state.hedging_hits} of ${state.transcript_segment_count} segments), above the 0.30 threshold.`,
+    });
   }
   if (state.certainty_hits > state.transcript_segment_count * 0.4) {
-    recommendedActions.push('Balance certainty with openness — leave room for others\' perspectives.');
+    const ratio = (state.certainty_hits / state.transcript_segment_count).toFixed(2);
+    recommendedActions.push({
+      action: 'Balance certainty with openness — leave room for others\' perspectives.',
+      reason: `Your certainty language ratio was ${ratio} (${state.certainty_hits} of ${state.transcript_segment_count} segments), above the 0.40 threshold.`,
+    });
+  }
+  if (state.interruption_count >= 3) {
+    recommendedActions.push({
+      action: 'Pause for 2 seconds after someone finishes speaking before responding.',
+      reason: `${state.interruption_count} interruptions were detected during this meeting.`,
+    });
   }
   if (!state.owner_assignment_present && !state.deadline_present) {
-    recommendedActions.push('Close meetings with clear owner assignments and deadlines for action items.');
+    recommendedActions.push({
+      action: 'Close meetings with clear owner assignments and deadlines for action items.',
+      reason: 'No owner assignments or deadlines were detected in this meeting.',
+    });
   }
-  recommendedActions.push('Review your prompt history to see which behavioral patterns recur.');
+  recommendedActions.push({
+    action: 'Review your prompt history to see which behavioral patterns recur.',
+    reason: `${state.prompts_shown_count} coaching prompts were shown during this meeting.`,
+  });
 
   return { strengths, growthAreas, recommendedActions, modelInterpretationInsights };
 }

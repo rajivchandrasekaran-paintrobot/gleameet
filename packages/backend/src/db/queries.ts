@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type {
   MeetingSession, ConsentRecord, RawEvent, FeatureObservation,
   LawTrigger, PromptEvent, PostMeetingReport, DeletionAudit,
+  TranscriptEntry, MeetingTranscript,
 } from '@gleameet/shared';
 
 // --- Users ---
@@ -77,9 +78,11 @@ export async function getMeetingSession(meetingSessionId: string): Promise<Meeti
 export async function getUserMeetings(userId: string, limit = 50, offset = 0) {
   const result = await pool.query(
     `SELECT ms.*,
-            CASE WHEN pmr.report_id IS NOT NULL THEN true ELSE false END AS report_available
+            CASE WHEN pmr.report_id IS NOT NULL THEN true ELSE false END AS report_available,
+            CASE WHEN mt.meeting_session_id IS NOT NULL THEN true ELSE false END AS transcript_available
      FROM meeting_sessions ms
      LEFT JOIN post_meeting_reports pmr ON ms.meeting_session_id = pmr.meeting_session_id
+     LEFT JOIN meeting_transcripts mt ON ms.meeting_session_id = mt.meeting_session_id
      WHERE ms.user_id = $1
      ORDER BY ms.started_at DESC
      LIMIT $2 OFFSET $3`,
@@ -316,6 +319,58 @@ export async function deleteAllUserData(userId: string): Promise<string> {
     client.release();
   }
   return auditId;
+}
+
+// --- Meeting Transcripts ---
+
+/** Fetch transcript_segment events for a session, ordered by time. */
+export async function getTranscriptSegmentsForSession(
+  meetingSessionId: string
+): Promise<TranscriptEntry[]> {
+  const result = await pool.query(
+    `SELECT payload_json, event_time_utc
+     FROM raw_events
+     WHERE meeting_session_id = $1 AND event_type = 'transcript_segment'
+     ORDER BY event_time_utc ASC`,
+    [meetingSessionId]
+  );
+  return result.rows.map(r => ({
+    speaker: r.payload_json.speaker || 'user',
+    text: r.payload_json.text || '',
+    start_offset_ms: r.payload_json.start_offset_ms || 0,
+    end_offset_ms: r.payload_json.end_offset_ms || 0,
+    event_time_utc: r.event_time_utc,
+  }));
+}
+
+/** Save aggregated transcript for a meeting session. */
+export async function insertMeetingTranscript(
+  meetingSessionId: string,
+  entries: TranscriptEntry[]
+): Promise<void> {
+  await pool.query(
+    `INSERT INTO meeting_transcripts (meeting_session_id, transcript_json, saved_at)
+     VALUES ($1, $2, NOW())
+     ON CONFLICT (meeting_session_id) DO UPDATE SET transcript_json = $2, saved_at = NOW()`,
+    [meetingSessionId, JSON.stringify(entries)]
+  );
+}
+
+/** Retrieve saved transcript for a meeting session. */
+export async function getMeetingTranscript(
+  meetingSessionId: string
+): Promise<MeetingTranscript | null> {
+  const result = await pool.query(
+    'SELECT * FROM meeting_transcripts WHERE meeting_session_id = $1',
+    [meetingSessionId]
+  );
+  if (!result.rows[0]) return null;
+  const row = result.rows[0];
+  return {
+    meeting_session_id: row.meeting_session_id,
+    entries: row.transcript_json,
+    saved_at: row.saved_at,
+  };
 }
 
 // --- Retention Cleanup ---

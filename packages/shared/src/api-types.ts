@@ -1,4 +1,4 @@
-import { RawEvent, Platform, MeetingSession, PromptEvent, PostMeetingReport, LawRegistryEntry, UserPreferences, CoachingIntensity } from './models';
+import { RawEvent, Platform, MeetingSession, PromptEvent, PostMeetingReport, LawRegistryEntry, UserPreferences, CoachingIntensity, MeetingTranscript } from './models';
 
 // POST /auth/session
 export interface AuthSessionRequest {
@@ -78,8 +78,11 @@ export type ReportResponse = PostMeetingReport;
 
 // GET /history
 export interface HistoryResponse {
-  meetings: Array<MeetingSession & { report_available: boolean }>;
+  meetings: Array<MeetingSession & { report_available: boolean; transcript_available: boolean }>;
 }
+
+// GET /history/:meeting_session_id/transcript
+export type TranscriptResponse = MeetingTranscript;
 
 // DELETE /meetings/:meeting_session_id
 export interface DeleteMeetingResponse {

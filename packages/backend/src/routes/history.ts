@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
-import { HistoryResponse } from '@gleameet/shared';
+import { HistoryResponse, TranscriptResponse } from '@gleameet/shared';
 import { AuthenticatedRequest } from '../middleware/auth';
-import { getUserMeetings } from '../db/queries';
+import { getUserMeetings, getMeetingTranscript, getMeetingSession } from '../db/queries';
 
 export const historyRouter = Router();
 
@@ -29,6 +29,7 @@ historyRouter.get('/', async (req: AuthenticatedRequest, res: Response) => {
         extension_version: m.extension_version,
         status: m.status,
         report_available: m.report_available,
+        transcript_available: m.transcript_available,
       })),
     };
 
@@ -36,5 +37,34 @@ historyRouter.get('/', async (req: AuthenticatedRequest, res: Response) => {
   } catch (err) {
     console.error('[HISTORY] Fetch error:', err);
     res.status(500).json({ error: 'Failed to fetch history', code: 'HISTORY_ERROR' });
+  }
+});
+
+/**
+ * GET /history/:meeting_session_id/transcript
+ * Fetch saved transcript for a meeting
+ */
+historyRouter.get('/:meeting_session_id/transcript', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.userId!;
+    const { meeting_session_id } = req.params;
+
+    // Verify the meeting belongs to this user
+    const session = await getMeetingSession(meeting_session_id);
+    if (!session || session.user_id !== userId) {
+      res.status(404).json({ error: 'Meeting not found', code: 'NOT_FOUND' });
+      return;
+    }
+
+    const transcript = await getMeetingTranscript(meeting_session_id);
+    if (!transcript) {
+      res.status(404).json({ error: 'Transcript not found', code: 'NOT_FOUND' });
+      return;
+    }
+
+    res.status(200).json(transcript as TranscriptResponse);
+  } catch (err) {
+    console.error('[HISTORY] Transcript fetch error:', err);
+    res.status(500).json({ error: 'Failed to fetch transcript', code: 'HISTORY_ERROR' });
   }
 });

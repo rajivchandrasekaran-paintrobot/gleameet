@@ -215,12 +215,32 @@ export interface PostMeetingReport {
   timeline_json: TimelineEntry[];
 }
 
+export interface RecommendedAction {
+  action: string;
+  reason: string;  // Which behavioral pattern triggered this recommendation
+}
+
 export interface ReportSummary {
   meeting_label: string | null;
   duration_seconds: number;
   total_prompts_shown: number;
   laws_triggered: string[];
-  recommended_actions: string[];
+  recommended_actions: RecommendedAction[];
+}
+
+// Aggregated transcript saved at end of meeting
+export interface TranscriptEntry {
+  speaker: 'user' | 'other';
+  text: string;
+  start_offset_ms: number;
+  end_offset_ms: number;
+  event_time_utc: string;
+}
+
+export interface MeetingTranscript {
+  meeting_session_id: string;
+  entries: TranscriptEntry[];
+  saved_at: string;
 }
 
 export interface ReportInsight {

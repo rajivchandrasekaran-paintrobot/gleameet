@@ -5,7 +5,7 @@ import { AuthenticatedRequest } from '../middleware/auth';
 import { initMeetingState, getMeetingState, updateMeetingState } from '../db/redis';
 import { loadActiveLaws } from '@gleameet/law-registry';
 import { generateReport } from '../services/report-generator';
-import { insertMeetingSession, endMeetingSession, insertConsentRecord, deleteMeetingData } from '../db/queries';
+import { insertMeetingSession, endMeetingSession, insertConsentRecord, deleteMeetingData, getTranscriptSegmentsForSession, insertMeetingTranscript } from '../db/queries';
 import { redis } from '../db/redis';
 
 export const meetingsRouter = Router();
@@ -102,6 +102,18 @@ meetingsRouter.post('/end', async (req: AuthenticatedRequest, res: Response) => 
 
     // Persist end time to Postgres
     await endMeetingSession(meeting_session_id);
+
+    // Aggregate and save transcript before report generation
+    const transcriptSegments = await getTranscriptSegmentsForSession(meeting_session_id).catch(err => {
+      console.error('[MEETING] Failed to fetch transcript segments:', err.message);
+      return [];
+    });
+    if (transcriptSegments.length > 0) {
+      await insertMeetingTranscript(meeting_session_id, transcriptSegments).catch(err => {
+        console.error('[MEETING] Failed to save transcript:', err.message);
+      });
+      console.log(`[MEETING] Saved ${transcriptSegments.length} transcript segments for session ${meeting_session_id}`);
+    }
 
     // Generate post-meeting report
     const reportId = await generateReport(meeting_session_id, state);
