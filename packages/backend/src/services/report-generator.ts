@@ -279,7 +279,7 @@ Return ONLY valid JSON, no markdown formatting or extra text.`;
     model: LLM_MODEL,
     messages: [{ role: 'user', content: prompt }],
     temperature: 0.7,
-    max_tokens: 2048,
+    max_tokens: 4096,
   });
 
   const raw = response.choices[0]?.message?.content;
