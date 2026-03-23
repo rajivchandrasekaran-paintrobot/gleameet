@@ -112,6 +112,16 @@ export async function generateReport(
   let recommendedActions: RecommendedAction[];
   let modelInterpretationInsights: ReportInsight[];
 
+  console.log('[REPORT] Starting report generation for session', meetingSessionId, {
+    lawTriggerCount: lawTriggerData.length,
+    triggers: triggers.length,
+    speakingTimeMs: state.speaking_time_total_ms,
+    turnCount: state.turn_count,
+    llmModel: process.env.LLM_MODEL || 'llama3.2 (default)',
+    llmBaseUrl: process.env.LLM_BASE_URL || 'http://localhost:11434/v1 (default)',
+    hasApiKey: !!(process.env.LLM_API_KEY),
+  });
+
   try {
     const llmResult = await generateInterpretiveContentViaLLM(state, durationSeconds, lawTriggerData);
     strengths = llmResult.strengths;
@@ -123,9 +133,13 @@ export async function generateReport(
       evidence_refs: [],
       law_id: i.law_id || null,
     }));
-    console.log('[REPORT] LLM-generated interpretive content for session', meetingSessionId);
+    console.log('[REPORT] ✅ LLM-generated content for session', meetingSessionId, {
+      recommendations: recommendedActions.length,
+      strengths: strengths.length,
+      growthAreas: growthAreas.length,
+    });
   } catch (err) {
-    console.error('[REPORT] LLM generation failed, using rule-based fallback:', (err as Error).message);
+    console.error('[REPORT] ❌ LLM generation failed, using rule-based fallback:', (err as Error).message, (err as Error).stack);
     const fallback = generateInterpretiveContentFallback(state, triggers, lawTriggerCounts);
     strengths = fallback.strengths;
     growthAreas = fallback.growthAreas;
