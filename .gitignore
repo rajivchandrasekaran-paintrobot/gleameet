@@ -9,3 +9,4 @@ coverage/
 .DS_Store
 *.log
 extension-key.pem
+*.tsbuildinfo
