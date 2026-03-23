@@ -84,6 +84,95 @@ body {
   color: #cc0000;
 }
 .btn-danger:hover { background: #fcd0d0; }
+/* History view */
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+.history-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 6px;
+  background: #f8f8fc;
+}
+.history-info {
+  flex: 1;
+  min-width: 0;
+}
+.history-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #1a1a2e;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.history-meta {
+  font-size: 11px;
+  color: #8b8ba0;
+  margin-top: 2px;
+}
+/* Transcript view */
+.transcript-actions {
+  margin-bottom: 10px;
+}
+.transcript-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 340px;
+  overflow-y: auto;
+}
+.transcript-entry {
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: #f8f8fc;
+}
+.transcript-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+.transcript-speaker {
+  font-size: 11px;
+  font-weight: 600;
+}
+.speaker-user { color: #0066cc; }
+.speaker-other { color: #6b6b80; }
+.transcript-time {
+  font-size: 10px;
+  color: #8b8ba0;
+}
+.transcript-text {
+  font-size: 12px;
+  color: #1a1a2e;
+  line-height: 1.4;
+}
+/* Small button variant */
+.btn-sm {
+  padding: 4px 10px;
+  font-size: 11px;
+}
+/* Error & empty messages */
+.error-message {
+  font-size: 12px;
+  color: #cc0000;
+  text-align: center;
+  margin: 8px 0;
+}
+.empty-message {
+  font-size: 13px;
+  color: #8b8ba0;
+  text-align: center;
+  padding: 16px 0;
+}
 .privacy-note {
   margin-top: 16px;
   padding-top: 12px;

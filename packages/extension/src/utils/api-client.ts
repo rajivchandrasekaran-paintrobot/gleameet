@@ -5,6 +5,7 @@ import type {
   PromptPollResponse,
   PromptAckRequest, PromptAckResponse,
   MeetingEndRequest, MeetingEndResponse,
+  HistoryResponse, TranscriptResponse,
 } from '@gleameet/shared';
 
 const DEFAULT_API_BASE = 'https://gleameet.onrender.com';
@@ -83,6 +84,16 @@ export async function endMeeting(meetingSessionId: string): Promise<MeetingEndRe
   return apiRequest<MeetingEndResponse>('POST', '/meetings/end', {
     meeting_session_id: meetingSessionId,
   } as MeetingEndRequest);
+}
+
+/** GET /history — Fetch past meeting sessions */
+export async function getHistory(): Promise<HistoryResponse> {
+  return apiRequest<HistoryResponse>('GET', '/history');
+}
+
+/** GET /history/:meeting_session_id/transcript — Fetch meeting transcript */
+export async function getTranscript(meetingSessionId: string): Promise<TranscriptResponse> {
+  return apiRequest<TranscriptResponse>('GET', `/history/${meetingSessionId}/transcript`);
 }
 
 /** Set the session token (e.g., from storage) */

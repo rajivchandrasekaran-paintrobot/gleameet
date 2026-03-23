@@ -24492,7 +24492,72 @@
 
   // src/popup/Popup.tsx
   var import_react = __toESM(require_react());
+
+  // src/utils/api-client.ts
+  var DEFAULT_API_BASE = "https://gleameet.onrender.com";
+  async function getApiBase() {
+    return new Promise((resolve) => {
+      if (typeof chrome !== "undefined" && chrome.storage?.sync) {
+        chrome.storage.sync.get({ backendUrl: DEFAULT_API_BASE }, (items) => {
+          resolve(items.backendUrl || DEFAULT_API_BASE);
+        });
+      } else {
+        resolve(DEFAULT_API_BASE);
+      }
+    });
+  }
+  var sessionToken = null;
+  function getHeaders() {
+    const headers = { "Content-Type": "application/json" };
+    if (sessionToken) {
+      headers["Authorization"] = `Bearer ${sessionToken}`;
+    }
+    return headers;
+  }
+  async function apiRequest(method, path, body) {
+    const apiBase = await getApiBase();
+    const response = await fetch(`${apiBase}${path}`, {
+      method,
+      headers: getHeaders(),
+      body: body ? JSON.stringify(body) : void 0
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: "Unknown error" }));
+      throw new Error(error.error || `API error: ${response.status}`);
+    }
+    return response.json();
+  }
+  async function getHistory() {
+    return apiRequest("GET", "/history");
+  }
+  async function getTranscript(meetingSessionId) {
+    return apiRequest("GET", `/history/${meetingSessionId}/transcript`);
+  }
+
+  // src/popup/Popup.tsx
   var import_jsx_runtime = __toESM(require_jsx_runtime());
+  function formatDuration(seconds) {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}m ${s}s`;
+  }
+  function formatTimestamp(ms) {
+    const totalSeconds = Math.floor(ms / 1e3);
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor(totalSeconds % 3600 / 60);
+    const s = totalSeconds % 60;
+    const pad = (n) => n.toString().padStart(2, "0");
+    return `${pad(h)}:${pad(m)}:${pad(s)}`;
+  }
+  function formatDate(iso) {
+    return new Date(iso).toLocaleDateString(void 0, {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+  }
   var Popup = () => {
     const [state, setState] = (0, import_react.useState)({
       status: "off",
@@ -24500,6 +24565,11 @@
       authenticated: false,
       userId: null
     });
+    const [view, setView] = (0, import_react.useState)("main");
+    const [meetings, setMeetings] = (0, import_react.useState)([]);
+    const [transcript, setTranscript] = (0, import_react.useState)(null);
+    const [loading, setLoading] = (0, import_react.useState)(false);
+    const [error, setError] = (0, import_react.useState)(null);
     (0, import_react.useEffect)(() => {
       chrome.runtime.sendMessage({ type: "GET_STATUS" }, (response) => {
         if (response) {
@@ -24579,6 +24649,53 @@
     const handleUnmute = () => {
       chrome.runtime.sendMessage({ type: "UNMUTE_COACHING" });
     };
+    const handleShowHistory = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const data = await getHistory();
+        setMeetings(data.meetings);
+        setView("history");
+      } catch (e) {
+        setError(e.message || "Failed to load history");
+      } finally {
+        setLoading(false);
+      }
+    };
+    const handleShowTranscript = async (meetingSessionId) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const data = await getTranscript(meetingSessionId);
+        setTranscript(data);
+        setView("transcript");
+      } catch (e) {
+        setError(e.message || "Failed to load transcript");
+      } finally {
+        setLoading(false);
+      }
+    };
+    const handleDownloadTranscript = () => {
+      if (!transcript) return;
+      const lines = [
+        "Gleameet Meeting Transcript",
+        `Meeting: ${transcript.meeting_session_id}`,
+        `Saved: ${transcript.saved_at}`,
+        ""
+      ];
+      for (const entry of transcript.entries) {
+        const ts = formatTimestamp(entry.start_offset_ms);
+        const speaker = entry.speaker === "user" ? "You" : "Other";
+        lines.push(`[${ts}] ${speaker}: ${entry.text}`);
+      }
+      const blob = new Blob([lines.join("\n")], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `transcript-${transcript.meeting_session_id.slice(0, 8)}.txt`;
+      a.click();
+      URL.revokeObjectURL(url);
+    };
     const statusLabels = {
       off: "Not in a meeting",
       ready: "Meeting detected",
@@ -24586,6 +24703,54 @@
       muted: "Coaching muted",
       error: "Error"
     };
+    if (view === "transcript" && transcript) {
+      return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "popup-container", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "popup-header", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-secondary btn-sm", onClick: () => setView("history"), children: "\u2190 Back" }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h1", { children: "Transcript" })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "transcript-actions", children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-primary btn-sm", onClick: handleDownloadTranscript, children: "\u2B07 Download" }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "transcript-list", children: [
+          transcript.entries.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "empty-message", children: "No transcript entries." }),
+          transcript.entries.map((entry, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "transcript-entry", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "transcript-meta", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: `transcript-speaker speaker-${entry.speaker}`, children: entry.speaker === "user" ? "You" : "Other" }),
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "transcript-time", children: formatTimestamp(entry.start_offset_ms) })
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "transcript-text", children: entry.text })
+          ] }, i))
+        ] })
+      ] });
+    }
+    if (view === "history") {
+      return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "popup-container", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "popup-header", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-secondary btn-sm", onClick: () => setView("main"), children: "\u2190 Back" }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h1", { children: "Past Meetings" })
+        ] }),
+        error && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "error-message", children: error }),
+        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "history-list", children: [
+          meetings.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "empty-message", children: "No past meetings yet." }),
+          meetings.map((m) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "history-entry", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "history-info", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "history-label", children: m.meeting_label || m.meeting_session_id.slice(0, 8) }),
+              /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "history-meta", children: [
+                formatDate(m.started_at),
+                m.duration_seconds != null && ` \xB7 ${formatDuration(m.duration_seconds)}`
+              ] })
+            ] }),
+            m.transcript_available && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+              "button",
+              {
+                className: "btn btn-secondary btn-sm",
+                onClick: () => handleShowTranscript(m.meeting_session_id),
+                children: "\u{1F4C4} Transcript"
+              }
+            )
+          ] }, m.meeting_session_id))
+        ] })
+      ] });
+    }
     return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "popup-container", children: [
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "popup-header", children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h1", { children: "GleaMeet" }) }),
       /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "meeting-info", children: [
@@ -24612,6 +24777,19 @@
         state.status === "off" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { style: { fontSize: "13px", color: "#6b6b80", textAlign: "center" }, children: "Join a Google Meet call to start coaching" }),
         state.status === "error" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { style: { fontSize: "13px", color: "#cc0000", textAlign: "center" }, children: "Connection error. Please try again." })
       ] }) }),
+      state.authenticated && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { textAlign: "center", marginTop: "12px" }, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+        "a",
+        {
+          href: "#",
+          onClick: (e) => {
+            e.preventDefault();
+            handleShowHistory();
+          },
+          style: { fontSize: "12px", color: "#0066cc", textDecoration: "none", cursor: "pointer" },
+          children: loading ? "Loading..." : "\u{1F4CB} Past Meetings"
+        }
+      ) }),
+      error && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "error-message", children: error }),
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "privacy-note", children: "Coaching is visible only to you" }),
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { textAlign: "center", marginTop: "8px" }, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
         "a",
