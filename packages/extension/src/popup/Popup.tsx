@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getHistory, getTranscript } from '../utils/api-client';
+import { getHistory, getTranscript, setSessionToken } from '../utils/api-client';
 
 type SessionStatus = 'off' | 'ready' | 'active' | 'muted' | 'error';
 type View = 'main' | 'history' | 'transcript';
@@ -68,6 +68,11 @@ export const Popup: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Load session token from storage into api-client (popup has its own memory, separate from service worker)
+    chrome.storage.local.get(['sessionToken'], (items) => {
+      if (items.sessionToken) setSessionToken(items.sessionToken);
+    });
+
     // Get current status from background
     chrome.runtime.sendMessage({ type: 'GET_STATUS' }, (response) => {
       if (response) {

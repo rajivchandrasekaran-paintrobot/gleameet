@@ -24533,6 +24533,9 @@
   async function getTranscript(meetingSessionId) {
     return apiRequest("GET", `/history/${meetingSessionId}/transcript`);
   }
+  function setSessionToken(token) {
+    sessionToken = token;
+  }
 
   // src/popup/Popup.tsx
   var import_jsx_runtime = __toESM(require_jsx_runtime());
@@ -24571,6 +24574,9 @@
     const [loading, setLoading] = (0, import_react.useState)(false);
     const [error, setError] = (0, import_react.useState)(null);
     (0, import_react.useEffect)(() => {
+      chrome.storage.local.get(["sessionToken"], (items) => {
+        if (items.sessionToken) setSessionToken(items.sessionToken);
+      });
       chrome.runtime.sendMessage({ type: "GET_STATUS" }, (response) => {
         if (response) {
           const isAuthenticated = response.authenticated || false;
