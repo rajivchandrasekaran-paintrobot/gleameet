@@ -39,24 +39,21 @@
     diagnosticInterval: null
   };
   var CAPTION_SELECTORS = [
+    // 2025/2026 Meet caption area — the bottom overlay with live text
     '[jsname="tgaKEf"]',
-    // Current Meet caption text (2025)
-    '[jsname="YSxPC"]',
-    // Speaker name
-    'div[class*="TBMuR"] span',
-    // Caption container variant
-    'div[class*="CNusmb"] span',
-    // Caption block variant
-    "div.a4cQT span",
-    // Captions area
-    "[data-message-id] span",
+    // Caption text node
+    'div[class*="TBMuR"]',
+    // Caption container
+    'div[class*="CNusmb"]',
+    // Caption block
+    "div.a4cQT",
+    // Captions wrapper
+    // Speaker + text containers
+    "[data-message-id]",
     // Timestamped captions
-    "[data-speaker-id] span",
-    // Speaker-tagged spans
+    // Fallbacks
     '[jscontroller="D1tHje"] span',
-    // Older Meet (fallback)
     'div[class*="iOzk7"] span'
-    // Older Meet (fallback)
   ];
   var SPEECH_THROTTLE_MS = 500;
   function detectMeeting() {
@@ -215,8 +212,14 @@
           try {
             startRecognition();
           } catch (e) {
+            setTimeout(() => {
+              try {
+                startRecognition();
+              } catch (_) {
+              }
+            }, 3e3);
           }
-        }, 500);
+        }, 1e3);
       };
       try {
         recognition.start();
@@ -240,15 +243,16 @@
       }
       for (const el of seen) {
         const text = el.textContent?.trim();
-        if (!text || text.length < 5 || el.getAttribute("data-gleameet-captured")) continue;
-        const NOISE_PATTERNS = /^(yellow|cyan|magenta|red|green|blue|white|black|settings|open|close|more|mute|unmute|camera|mic|chat|participants|present|captions?|live|on|off|you|ok|yes|no)$/i;
-        const wordCount = text.split(/\s+/).length;
-        if (wordCount <= 2 && NOISE_PATTERNS.test(text.replace(/\s+/g, " ").trim())) continue;
-        if (wordCount < 4 && !/[.!?,]/.test(text)) continue;
+        if (!text || text.length < 10 || el.getAttribute("data-gleameet-captured")) continue;
+        if (/^[A-Z][a-zA-Z\s,]+\([A-Z][a-zA-Z\s]+\)$/.test(text)) continue;
+        const wordCount = text.split(/\s+/).filter((w) => w.length > 0).length;
+        if (wordCount < 5) continue;
         el.setAttribute("data-gleameet-captured", "1");
-        const isSelf = !!el.closest("[data-self-name]") || !!el.closest('[data-is-self="true"]') || !!el.closest('[aria-label*="You"]');
+        const container = el.closest("[class]");
+        const containerText = container?.previousElementSibling?.textContent?.trim() || "";
+        const isSelf = containerText === "You" || !!el.closest("[data-self-name]") || !!el.closest('[data-is-self="true"]');
         const speaker = isSelf ? "user" : "other";
-        console.log(`[GleaMeet] Caption captured (${speaker}): ${text.slice(0, 60)}`);
+        console.log(`[GleaMeet] Caption captured (${speaker}): ${text.slice(0, 80)}`);
         emitEvent("transcript_segment", {
           text,
           speaker,

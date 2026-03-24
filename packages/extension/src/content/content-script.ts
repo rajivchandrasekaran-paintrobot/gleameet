@@ -44,16 +44,18 @@ const state: ContentState = {
 };
 
 // Caption selectors — ordered by likelihood, all tried on every DOM mutation
+// Goal: hit the live caption text box at the bottom of Meet, not the language picker
 const CAPTION_SELECTORS = [
-  '[jsname="tgaKEf"]',                  // Current Meet caption text (2025)
-  '[jsname="YSxPC"]',                   // Speaker name
-  'div[class*="TBMuR"] span',           // Caption container variant
-  'div[class*="CNusmb"] span',          // Caption block variant
-  'div.a4cQT span',                     // Captions area
-  '[data-message-id] span',             // Timestamped captions
-  '[data-speaker-id] span',             // Speaker-tagged spans
-  '[jscontroller="D1tHje"] span',       // Older Meet (fallback)
-  'div[class*="iOzk7"] span',           // Older Meet (fallback)
+  // 2025/2026 Meet caption area — the bottom overlay with live text
+  '[jsname="tgaKEf"]',                  // Caption text node
+  'div[class*="TBMuR"]',               // Caption container
+  'div[class*="CNusmb"]',              // Caption block
+  'div.a4cQT',                          // Captions wrapper
+  // Speaker + text containers
+  '[data-message-id]',                  // Timestamped captions
+  // Fallbacks
+  '[jscontroller="D1tHje"] span',
+  'div[class*="iOzk7"] span',
 ];
 
 // Throttle speech events to avoid flooding (max one per 500ms)
@@ -273,10 +275,13 @@ function startMicrophoneDetection(): void {
     };
 
     recognition.onend = () => {
-      // Auto-restart — Meet sessions are long
+      // Auto-restart with backoff — Meet may have taken the mic temporarily
       setTimeout(() => {
-        try { startRecognition(); } catch(e) {}
-      }, 500);
+        try { startRecognition(); } catch(e) {
+          // If still can't start, try again after 3s
+          setTimeout(() => { try { startRecognition(); } catch(_) {} }, 3000);
+        }
+      }, 1000);
     };
 
     try {
@@ -307,24 +312,26 @@ function observeCaptions(): void {
 
     for (const el of seen) {
       const text = (el as HTMLElement).textContent?.trim();
-      if (!text || text.length < 5 || el.getAttribute('data-gleameet-captured')) continue;
+      if (!text || text.length < 10 || el.getAttribute('data-gleameet-captured')) continue;
 
-      // Filter out Meet UI noise — single words that are color names, settings labels, etc.
-      const NOISE_PATTERNS = /^(yellow|cyan|magenta|red|green|blue|white|black|settings|open|close|more|mute|unmute|camera|mic|chat|participants|present|captions?|live|on|off|you|ok|yes|no)$/i;
-      const wordCount = text.split(/\s+/).length;
-      if (wordCount <= 2 && NOISE_PATTERNS.test(text.replace(/\s+/g, ' ').trim())) continue;
+      // Filter language picker items — format: "Language Name (Country)" e.g. "Arabic (United Arab Emirates)"
+      if (/^[A-Z][a-zA-Z\s,]+\([A-Z][a-zA-Z\s]+\)$/.test(text)) continue;
 
-      // Must look like actual speech — at least 4 words or contains sentence punctuation
-      if (wordCount < 4 && !/[.!?,]/.test(text)) continue;
+      // Filter UI noise — short single/double words that aren't speech
+      const wordCount = text.split(/\s+/).filter(w => w.length > 0).length;
+      if (wordCount < 5) continue;
 
       el.setAttribute('data-gleameet-captured', '1');
 
-      const isSelf = !!el.closest('[data-self-name]') ||
-                     !!el.closest('[data-is-self="true"]') ||
-                     !!el.closest('[aria-label*="You"]');
+      // Speaker detection — check for "You" label in parent container
+      const container = el.closest('[class]');
+      const containerText = container?.previousElementSibling?.textContent?.trim() || '';
+      const isSelf = containerText === 'You' ||
+                     !!el.closest('[data-self-name]') ||
+                     !!el.closest('[data-is-self="true"]');
       const speaker = isSelf ? 'user' : 'other';
 
-      console.log(`[GleaMeet] Caption captured (${speaker}): ${text.slice(0, 60)}`);
+      console.log(`[GleaMeet] Caption captured (${speaker}): ${text.slice(0, 80)}`);
       emitEvent('transcript_segment', {
         text,
         speaker,
