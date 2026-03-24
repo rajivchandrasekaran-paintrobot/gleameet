@@ -213,6 +213,17 @@ export interface PostMeetingReport {
   strengths_json: string[];
   growth_areas_json: string[];
   timeline_json: TimelineEntry[];
+  transcript_with_nudges?: TranscriptWithNudgesEntry[]; // Full annotated transcript
+  summary_analysis?: string; // Narrative post-call analysis paragraph
+}
+
+// Transcript entry annotated with nudges that fired around the same time
+export interface TranscriptWithNudgesEntry {
+  type: 'speech' | 'nudge' | 'reinforcement';
+  speaker?: 'user' | 'other';
+  text: string;
+  timestamp_ms: number;
+  nudge_law_id?: string; // For nudge entries
 }
 
 export interface RecommendedAction {

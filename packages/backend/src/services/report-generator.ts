@@ -1,6 +1,6 @@
-import { PostMeetingReport, ReportInsight, TimelineEntry, RecommendedAction } from '@gleameet/shared';
+import { PostMeetingReport, ReportInsight, TimelineEntry, RecommendedAction, TranscriptWithNudgesEntry } from '@gleameet/shared';
 import { MeetingState } from '../db/redis';
-import { getLawTriggersForSession, getPromptsForSession, insertReport } from '../db/queries';
+import { getLawTriggersForSession, getPromptsForSession, insertReport, getMeetingTranscript } from '../db/queries';
 import { loadLawById } from '@gleameet/law-registry';
 import { v4 as uuidv4 } from 'uuid';
 import { buildLLMClient, LLM_MODEL } from './llm-client';
@@ -192,6 +192,75 @@ export async function generateReport(
   // --- Build and persist report ---
   const lawsTriggered = Array.from(lawTriggerCounts.keys());
 
+  // --- Build annotated transcript with nudges interleaved ---
+  const savedTranscript = await getMeetingTranscript(meetingSessionId).catch(() => null);
+  const transcriptWithNudges: TranscriptWithNudgesEntry[] = [];
+  const meetingStartMs = new Date(state.started_at).getTime();
+
+  if (savedTranscript?.entries) {
+    // Merge transcript entries and prompts by timestamp
+    const speechEntries: TranscriptWithNudgesEntry[] = savedTranscript.entries.map(e => ({
+      type: 'speech' as const,
+      speaker: e.speaker,
+      text: e.text,
+      timestamp_ms: e.start_offset_ms,
+    }));
+
+    const nudgeEntries: TranscriptWithNudgesEntry[] = prompts
+      .filter(p => p.shown_at)
+      .map(p => ({
+        type: (p.law_id === 'REINFORCE' ? 'reinforcement' : 'nudge') as 'nudge' | 'reinforcement',
+        text: p.rationale_text ? `${p.short_text} — ${p.rationale_text}` : p.short_text,
+        timestamp_ms: new Date(p.shown_at!).getTime() - meetingStartMs,
+        nudge_law_id: p.law_id,
+      }));
+
+    transcriptWithNudges.push(...speechEntries, ...nudgeEntries);
+    transcriptWithNudges.sort((a, b) => a.timestamp_ms - b.timestamp_ms);
+  }
+
+  // --- Generate narrative summary analysis ---
+  let summaryAnalysis: string | undefined;
+  try {
+    const transcriptSample = transcriptWithNudges.slice(0, 30)
+      .map(e => {
+        if (e.type === 'speech') return `[${e.speaker}] ${e.text}`;
+        if (e.type === 'nudge') return `[COACH NUDGE] ${e.text}`;
+        return `[COACH PRAISE] ${e.text}`;
+      }).join('\n');
+
+    const analysisPrompt = `You are a behavioral science meeting coach. Write a post-call analysis paragraph (150-200 words) based on the data below.
+
+Meeting duration: ${Math.round(durationSeconds / 60)} minutes
+Prompts shown: ${state.prompts_shown_count}
+Laws triggered: ${lawsTriggered.join(', ') || 'none'}
+Strengths: ${strengths.join('; ')}
+Growth areas: ${growthAreas.join('; ')}
+
+Transcript sample (with coach nudges/praise interleaved):
+${transcriptSample || '(no transcript)'}
+
+Write a flowing narrative analysis that:
+- Summarizes how the conversation went behaviorally
+- Highlights specific moments where patterns were observed
+- References the nudges and whether they aligned with what was happening
+- Ends with 1-2 forward-looking behavioral suggestions
+- Is specific, not generic — reference actual content from the transcript
+
+Write ONLY the analysis paragraph, no headers.`;
+
+    const client = buildLLMClient();
+    const resp = await client.chat.completions.create({
+      model: LLM_MODEL,
+      messages: [{ role: 'user', content: analysisPrompt }],
+      max_tokens: 400,
+      temperature: 0.7,
+    });
+    summaryAnalysis = resp.choices?.[0]?.message?.content?.trim() || undefined;
+  } catch (err) {
+    console.warn('[REPORT] Summary analysis generation failed:', (err as Error).message);
+  }
+
   const report: PostMeetingReport = {
     report_id: reportId,
     meeting_session_id: meetingSessionId,
@@ -207,6 +276,8 @@ export async function generateReport(
     strengths_json: strengths.slice(0, 3),
     growth_areas_json: growthAreas.slice(0, 3),
     timeline_json: timeline,
+    transcript_with_nudges: transcriptWithNudges.length > 0 ? transcriptWithNudges : undefined,
+    summary_analysis: summaryAnalysis,
   };
 
   // Persist to Postgres

@@ -233,13 +233,23 @@ export async function insertReport(report: PostMeetingReport): Promise<void> {
   await pool.query(
     `INSERT INTO post_meeting_reports
      (report_id, meeting_session_id, generated_at, summary_json, insights_json,
-      strengths_json, growth_areas_json, timeline_json)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      strengths_json, growth_areas_json, timeline_json, transcript_with_nudges, summary_analysis)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+     ON CONFLICT (meeting_session_id) DO UPDATE SET
+       summary_json = EXCLUDED.summary_json,
+       insights_json = EXCLUDED.insights_json,
+       strengths_json = EXCLUDED.strengths_json,
+       growth_areas_json = EXCLUDED.growth_areas_json,
+       timeline_json = EXCLUDED.timeline_json,
+       transcript_with_nudges = EXCLUDED.transcript_with_nudges,
+       summary_analysis = EXCLUDED.summary_analysis`,
     [
       report.report_id, report.meeting_session_id, report.generated_at,
       JSON.stringify(report.summary_json), JSON.stringify(report.insights_json),
       JSON.stringify(report.strengths_json), JSON.stringify(report.growth_areas_json),
       JSON.stringify(report.timeline_json),
+      report.transcript_with_nudges ? JSON.stringify(report.transcript_with_nudges) : null,
+      report.summary_analysis || null,
     ]
   );
 }
@@ -249,7 +259,20 @@ export async function getReport(meetingSessionId: string): Promise<PostMeetingRe
     'SELECT * FROM post_meeting_reports WHERE meeting_session_id = $1',
     [meetingSessionId]
   );
-  return result.rows[0] || null;
+  if (!result.rows[0]) return null;
+  const row = result.rows[0];
+  return {
+    ...row,
+    summary_json: typeof row.summary_json === 'string' ? JSON.parse(row.summary_json) : row.summary_json,
+    insights_json: typeof row.insights_json === 'string' ? JSON.parse(row.insights_json) : row.insights_json,
+    strengths_json: typeof row.strengths_json === 'string' ? JSON.parse(row.strengths_json) : row.strengths_json,
+    growth_areas_json: typeof row.growth_areas_json === 'string' ? JSON.parse(row.growth_areas_json) : row.growth_areas_json,
+    timeline_json: typeof row.timeline_json === 'string' ? JSON.parse(row.timeline_json) : row.timeline_json,
+    transcript_with_nudges: row.transcript_with_nudges
+      ? (typeof row.transcript_with_nudges === 'string' ? JSON.parse(row.transcript_with_nudges) : row.transcript_with_nudges)
+      : undefined,
+    summary_analysis: row.summary_analysis || undefined,
+  };
 }
 
 // --- Deletion ---

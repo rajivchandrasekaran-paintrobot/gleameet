@@ -128,7 +128,9 @@ CREATE TABLE IF NOT EXISTS post_meeting_reports (
     insights_json JSONB NOT NULL DEFAULT '[]'::jsonb,
     strengths_json JSONB NOT NULL DEFAULT '[]'::jsonb,
     growth_areas_json JSONB NOT NULL DEFAULT '[]'::jsonb,
-    timeline_json JSONB NOT NULL DEFAULT '[]'::jsonb
+    timeline_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    transcript_with_nudges JSONB,
+    summary_analysis TEXT
 );
 
 -- Meeting transcripts (aggregated at end of meeting)
