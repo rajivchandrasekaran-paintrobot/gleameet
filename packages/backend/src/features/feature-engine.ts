@@ -326,13 +326,24 @@ function updateStateFromEvent(event: RawEvent, state: MeetingState): void {
         state.recent_transcript.push({ speaker: payload.speaker, text: payload.text, ts: now });
         if (state.recent_transcript.length > 10) state.recent_transcript.shift();
       }
+      if (payload?.text) {
+        // Count turn changes when speaker alternates
+        const lastSpeaker = state.recent_transcript.length >= 2
+          ? state.recent_transcript[state.recent_transcript.length - 2]?.speaker
+          : null;
+        if (lastSpeaker && lastSpeaker !== payload.speaker) {
+          state.turn_count++;
+          state.last_turn_change_ms = now;
+        }
+      }
       if (payload?.speaker === 'user' && payload?.text) {
         state.transcript_segment_count++;
-        // Each transcript segment counts as a speaking turn
-        state.turn_count++;
         state.last_speech_start_ms = now;
         state.user_is_speaking = true;
         analyzeTranscriptText(payload.text, state);
+      } else if (payload?.speaker === 'other' && payload?.text) {
+        // Analyze other speaker's text for turn context (interruptions, disagreement, etc.)
+        state.other_speaking_time_total_ms += 2000; // ~2s estimate per caption segment
       }
       break;
     }
