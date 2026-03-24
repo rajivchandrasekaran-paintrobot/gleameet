@@ -250,6 +250,15 @@ body {
   display: flex;
   gap: 4px;
   flex-shrink: 0;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.btn-delete:hover { opacity: 1 !important; color: #cc0000; }
+.delete-confirm {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex-wrap: wrap;
 }
 .privacy-note {
   margin-top: 16px;

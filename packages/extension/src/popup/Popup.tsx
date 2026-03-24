@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getHistory, getTranscript, getReport, setSessionToken } from '../utils/api-client';
+import { getHistory, getTranscript, getReport, deleteMeeting, setSessionToken } from '../utils/api-client';
 import type { PostMeetingReport, TranscriptWithNudgesEntry } from '@gleameet/shared';
 
 type SessionStatus = 'off' | 'ready' | 'active' | 'muted' | 'error';
@@ -71,6 +71,7 @@ export const Popup: React.FC = () => {
   const [reportTab, setReportTab] = useState<ReportTab>('summary');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     // Load session token from storage into api-client (popup has its own memory, separate from service worker)
@@ -233,6 +234,19 @@ export const Popup: React.FC = () => {
       setError(e.message || 'Failed to load report');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDeleteMeeting = async (meetingSessionId: string) => {
+    setError(null);
+    try {
+      await ensureToken();
+      await deleteMeeting(meetingSessionId);
+      setMeetings(prev => prev.filter(m => m.meeting_session_id !== meetingSessionId));
+      setDeletingId(null);
+    } catch (e: any) {
+      setError(e.message || 'Failed to delete meeting');
+      setDeletingId(null);
     }
   };
 
@@ -507,6 +521,34 @@ export const Popup: React.FC = () => {
                     onClick={() => handleShowReport(m.meeting_session_id)}
                   >
                     📊 Report
+                  </button>
+                )}
+                {deletingId === m.meeting_session_id ? (
+                  <span className="delete-confirm">
+                    <span style={{ fontSize: '11px', color: '#cc0000' }}>Delete? Cannot be undone.</span>
+                    <button
+                      className="btn btn-danger btn-sm"
+                      onClick={() => handleDeleteMeeting(m.meeting_session_id)}
+                      style={{ fontSize: '10px', padding: '2px 6px' }}
+                    >
+                      Confirm
+                    </button>
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => setDeletingId(null)}
+                      style={{ fontSize: '10px', padding: '2px 6px' }}
+                    >
+                      Cancel
+                    </button>
+                  </span>
+                ) : (
+                  <button
+                    className="btn btn-secondary btn-sm btn-delete"
+                    onClick={() => setDeletingId(m.meeting_session_id)}
+                    title="Delete meeting"
+                    style={{ opacity: 0.5, fontSize: '12px', padding: '2px 6px' }}
+                  >
+                    🗑️
                   </button>
                 )}
               </div>

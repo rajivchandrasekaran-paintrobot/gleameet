@@ -24562,6 +24562,9 @@
   async function getReport(meetingSessionId) {
     return apiRequest("GET", `/reports/${meetingSessionId}`);
   }
+  async function deleteMeeting(meetingSessionId) {
+    return apiRequest("DELETE", `/meetings/${meetingSessionId}`);
+  }
   function setSessionToken(token) {
     sessionToken = token;
   }
@@ -24604,6 +24607,7 @@
     const [reportTab, setReportTab] = (0, import_react.useState)("summary");
     const [loading, setLoading] = (0, import_react.useState)(false);
     const [error, setError] = (0, import_react.useState)(null);
+    const [deletingId, setDeletingId] = (0, import_react.useState)(null);
     (0, import_react.useEffect)(() => {
       chrome.storage.local.get(["sessionToken"], (items) => {
         if (items.sessionToken) setSessionToken(items.sessionToken);
@@ -24745,6 +24749,18 @@
         setError(e.message || "Failed to load report");
       } finally {
         setLoading(false);
+      }
+    };
+    const handleDeleteMeeting = async (meetingSessionId) => {
+      setError(null);
+      try {
+        await ensureToken();
+        await deleteMeeting(meetingSessionId);
+        setMeetings((prev) => prev.filter((m) => m.meeting_session_id !== meetingSessionId));
+        setDeletingId(null);
+      } catch (e) {
+        setError(e.message || "Failed to delete meeting");
+        setDeletingId(null);
       }
     };
     const handleDownloadReport = () => {
@@ -24949,6 +24965,36 @@
                   className: "btn btn-secondary btn-sm",
                   onClick: () => handleShowReport(m.meeting_session_id),
                   children: "\u{1F4CA} Report"
+                }
+              ),
+              deletingId === m.meeting_session_id ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { className: "delete-confirm", children: [
+                /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: { fontSize: "11px", color: "#cc0000" }, children: "Delete? Cannot be undone." }),
+                /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+                  "button",
+                  {
+                    className: "btn btn-danger btn-sm",
+                    onClick: () => handleDeleteMeeting(m.meeting_session_id),
+                    style: { fontSize: "10px", padding: "2px 6px" },
+                    children: "Confirm"
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+                  "button",
+                  {
+                    className: "btn btn-secondary btn-sm",
+                    onClick: () => setDeletingId(null),
+                    style: { fontSize: "10px", padding: "2px 6px" },
+                    children: "Cancel"
+                  }
+                )
+              ] }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+                "button",
+                {
+                  className: "btn btn-secondary btn-sm btn-delete",
+                  onClick: () => setDeletingId(m.meeting_session_id),
+                  title: "Delete meeting",
+                  style: { opacity: 0.5, fontSize: "12px", padding: "2px 6px" },
+                  children: "\u{1F5D1}\uFE0F"
                 }
               )
             ] })

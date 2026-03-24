@@ -118,6 +118,11 @@ export async function getReport(meetingSessionId: string): Promise<ReportRespons
   return apiRequest<ReportResponse>('GET', `/reports/${meetingSessionId}`);
 }
 
+/** DELETE /meetings/:meeting_session_id — Delete a meeting and all associated data */
+export async function deleteMeeting(meetingSessionId: string): Promise<{ deletion_audit_id: string; status: string }> {
+  return apiRequest('DELETE', `/meetings/${meetingSessionId}`);
+}
+
 /** POST /audio/transcribe — Send audio chunk for Whisper transcription */
 export async function transcribeAudio(blob: Blob, stream: 'mic' | 'tab', meetingSessionId: string): Promise<{ text: string; stream: string }> {
   const apiBase = await getApiBase();

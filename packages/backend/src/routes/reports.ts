@@ -29,7 +29,12 @@ reportsRouter.get('/:meeting_session_id', async (req: AuthenticatedRequest, res:
         ]);
 
         if (savedTranscript?.entries && savedTranscript.entries.length > 0) {
-          const meetingStartMs = new Date(report.generated_at).getTime() - (report.summary_json.duration_seconds * 1000);
+          // Use actual meeting start time, not estimated from generated_at
+          const sessionResult = await pool.query(
+            'SELECT started_at FROM meeting_sessions WHERE meeting_session_id = $1',
+            [meeting_session_id]
+          );
+          const meetingStartMs = new Date(sessionResult.rows[0].started_at).getTime();
 
           const speechEntries: TranscriptWithNudgesEntry[] = savedTranscript.entries.map(e => ({
             type: 'speech' as const,
