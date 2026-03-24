@@ -16,7 +16,7 @@ export const ROLLING_WINDOWS = {
 
 /** Prompt text limits */
 export const PROMPT_LIMITS = {
-  BODY_MAX_WORDS: 12,      // FR-058
+  BODY_MAX_WORDS: 25,      // FR-058 (extended for richer nudges)
   RATIONALE_MAX_WORDS: 10, // FR-059
   EXAMPLE_MAX_WORDS: 20,   // FR-060
 } as const;

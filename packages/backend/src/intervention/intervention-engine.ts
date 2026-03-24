@@ -207,7 +207,7 @@ ${transcriptBlock}
 Template nudge: "${templateText}"
 
 Rules:
-- Output ONE short sentence, max 12 words
+- Output ONE sentence, up to 25 words if needed for context
 - Reference something specific from the conversation (a word they used, a pattern)
 - Make it actionable, not generic
 - Do NOT use quotes around the sentence
