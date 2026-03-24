@@ -68,6 +68,7 @@
     const hasLeaveBtn = !!document.querySelector("[data-is-muted]") || !!document.querySelector('[aria-label*="Leave"]') || !!document.querySelector('[aria-label*="leave"]');
     return hasVideo || hasLeaveBtn;
   }
+  var meetingEndDebounceTimer = null;
   function startMeetingDetection() {
     if (detectMeeting() && !state.meetingDetected) {
       onMeetingDetected();
@@ -75,9 +76,20 @@
     state.mutationObserver = new MutationObserver(() => {
       const inMeeting = detectMeeting();
       if (inMeeting && !state.meetingDetected) {
+        if (meetingEndDebounceTimer) {
+          clearTimeout(meetingEndDebounceTimer);
+          meetingEndDebounceTimer = null;
+        }
         onMeetingDetected();
       } else if (!inMeeting && state.meetingDetected) {
-        onMeetingEnded();
+        if (!meetingEndDebounceTimer) {
+          meetingEndDebounceTimer = setTimeout(() => {
+            meetingEndDebounceTimer = null;
+            if (!detectMeeting()) {
+              onMeetingEnded();
+            }
+          }, 3e3);
+        }
       }
     });
     state.mutationObserver.observe(document.body, {

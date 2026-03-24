@@ -80,6 +80,8 @@ function detectMeeting(): boolean {
   return hasVideo || hasLeaveBtn;
 }
 
+let meetingEndDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
 /** Start observing the DOM for meeting lifecycle changes */
 function startMeetingDetection(): void {
   // Initial check
@@ -88,12 +90,26 @@ function startMeetingDetection(): void {
   }
 
   // Observe DOM changes for meeting start/end
+  // Use a debounce for "ended" to avoid false positives from transient DOM changes
   state.mutationObserver = new MutationObserver(() => {
     const inMeeting = detectMeeting();
     if (inMeeting && !state.meetingDetected) {
+      // Cancel any pending end debounce — we're still in the meeting
+      if (meetingEndDebounceTimer) {
+        clearTimeout(meetingEndDebounceTimer);
+        meetingEndDebounceTimer = null;
+      }
       onMeetingDetected();
     } else if (!inMeeting && state.meetingDetected) {
-      onMeetingEnded();
+      // Debounce meeting end by 3 seconds — DOM can flicker during Meet reloads
+      if (!meetingEndDebounceTimer) {
+        meetingEndDebounceTimer = setTimeout(() => {
+          meetingEndDebounceTimer = null;
+          if (!detectMeeting()) {
+            onMeetingEnded();
+          }
+        }, 3000);
+      }
     }
   });
 
