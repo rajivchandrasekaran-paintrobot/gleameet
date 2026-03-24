@@ -58,14 +58,26 @@
     'div[class*="iOzk7"] span'
   ];
   var SPEECH_THROTTLE_MS = 500;
+  function getPlatform() {
+    const url = window.location.href;
+    if (url.includes("teams.microsoft.com") || url.includes("teams.live.com")) return "teams";
+    if (url.includes("zoom.us") || url.includes("app.zoom.us")) return "zoom";
+    return "google_meet";
+  }
   function detectMeeting() {
     const url = window.location.href;
-    if (!/meet\.google\.com\/[a-z]+-[a-z]+-[a-z]+/i.test(url)) {
-      return false;
+    if (/meet\.google\.com\/[a-z]+-[a-z]+-[a-z]+/i.test(url)) {
+      const hasVideo = !!document.querySelector("video");
+      const hasLeaveBtn = !!document.querySelector("[data-is-muted]") || !!document.querySelector('[aria-label*="Leave"]') || !!document.querySelector('[aria-label*="leave"]');
+      return hasVideo || hasLeaveBtn;
     }
-    const hasVideo = !!document.querySelector("video");
-    const hasLeaveBtn = !!document.querySelector("[data-is-muted]") || !!document.querySelector('[aria-label*="Leave"]') || !!document.querySelector('[aria-label*="leave"]');
-    return hasVideo || hasLeaveBtn;
+    if (url.includes("teams.microsoft.com") || url.includes("teams.live.com")) {
+      return !!document.querySelector('[data-tid="calling-screen"]') || !!document.querySelector('[data-tid="hangup-btn"]') || !!document.querySelector('button[aria-label*="Leave"]') || !!document.querySelector('button[aria-label*="leave"]') || !!document.querySelector("video");
+    }
+    if (url.includes("zoom.us/wc") || url.includes("app.zoom.us/wc")) {
+      return !!document.querySelector(".meeting-app") || !!document.querySelector("#wc-container-right") || !!document.querySelector("video");
+    }
+    return false;
   }
   var meetingEndDebounceTimer = null;
   function startMeetingDetection() {
@@ -99,7 +111,7 @@
   function onMeetingDetected() {
     state.meetingDetected = true;
     state.status = "ready";
-    chrome.runtime.sendMessage({ type: "MEETING_DETECTED" }).catch(() => {
+    chrome.runtime.sendMessage({ type: "MEETING_DETECTED", platform: getPlatform() }).catch(() => {
     });
     injectStatusIndicator();
     console.log("[GleaMeet] Meeting detected");
@@ -131,16 +143,24 @@
   }
   function startSignalCapture() {
     if (!state.meetingSessionId || !state.userId) return;
-    observeSpeechIndicators();
-    observeCaptions();
+    const platform = getPlatform();
+    if (platform === "google_meet") {
+      observeSpeechIndicators();
+      observeCaptions();
+    } else {
+      console.log(`[GleaMeet] ${platform}: using mic-only Whisper transcription`);
+      startMicrophoneDetection();
+    }
+    startAudioCapture(state.meetingSessionId);
     emitEvent("session_state_changed", {
       previous_state: "ready",
       new_state: "active",
-      reason: "coaching_enabled"
+      reason: "coaching_enabled",
+      platform
     });
     state.diagnosticInterval = setInterval(() => {
-      const captionEls = CAPTION_SELECTORS.flatMap((sel) => Array.from(document.querySelectorAll(sel)));
-      console.log(`[GleaMeet] Diagnostics: events_emitted=${state.eventsEmitted}, speech_active=${state.userSpeaking}, recognition_running=${!!recognition}, caption_elements_found=${captionEls.length}`);
+      const captionEls = platform === "google_meet" ? CAPTION_SELECTORS.flatMap((sel) => Array.from(document.querySelectorAll(sel))).length : 0;
+      console.log(`[GleaMeet] Diagnostics [${platform}]: events_emitted=${state.eventsEmitted}, speech_active=${state.userSpeaking}, recognition_running=${!!recognition}, caption_elements_found=${captionEls}`);
     }, 1e4);
   }
   function observeSpeechIndicators() {

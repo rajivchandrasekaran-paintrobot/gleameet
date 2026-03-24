@@ -67,23 +67,44 @@ const SPEECH_THROTTLE_MS = 500;
 
 // --- Meeting Detection (FR-005, FR-006) ---
 
-/** Detect if we're in an active Google Meet session */
-function detectMeeting(): boolean {
-  // URL is the most reliable signal — if we're on a meet.google.com/<code> page, we're in a meeting.
-  // Meet's DOM attributes and jscontroller values change frequently; don't rely on them.
+/** Detect current platform */
+function getPlatform(): 'google_meet' | 'teams' | 'zoom' {
   const url = window.location.href;
-  if (!/meet\.google\.com\/[a-z]+-[a-z]+-[a-z]+/i.test(url)) {
-    return false;
+  if (url.includes('teams.microsoft.com') || url.includes('teams.live.com')) return 'teams';
+  if (url.includes('zoom.us') || url.includes('app.zoom.us')) return 'zoom';
+  return 'google_meet';
+}
+
+/** Detect if we're in an active video call */
+function detectMeeting(): boolean {
+  const url = window.location.href;
+
+  // Google Meet
+  if (/meet\.google\.com\/[a-z]+-[a-z]+-[a-z]+/i.test(url)) {
+    const hasVideo = !!document.querySelector('video');
+    const hasLeaveBtn = !!document.querySelector('[data-is-muted]') ||
+                        !!document.querySelector('[aria-label*="Leave"]') ||
+                        !!document.querySelector('[aria-label*="leave"]');
+    return hasVideo || hasLeaveBtn;
   }
 
-  // Confirm the page has actually loaded (not just the lobby pre-join screen)
-  // Look for any video element (self-view always present once joined) or the leave button
-  const hasVideo = !!document.querySelector('video');
-  const hasLeaveBtn = !!document.querySelector('[data-is-muted]') ||
-                      !!document.querySelector('[aria-label*="Leave"]') ||
-                      !!document.querySelector('[aria-label*="leave"]');
+  // Microsoft Teams web
+  if (url.includes('teams.microsoft.com') || url.includes('teams.live.com')) {
+    return !!document.querySelector('[data-tid="calling-screen"]') ||
+           !!document.querySelector('[data-tid="hangup-btn"]') ||
+           !!document.querySelector('button[aria-label*="Leave"]') ||
+           !!document.querySelector('button[aria-label*="leave"]') ||
+           !!document.querySelector('video');
+  }
 
-  return hasVideo || hasLeaveBtn;
+  // Zoom web client
+  if (url.includes('zoom.us/wc') || url.includes('app.zoom.us/wc')) {
+    return !!document.querySelector('.meeting-app') ||
+           !!document.querySelector('#wc-container-right') ||
+           !!document.querySelector('video');
+  }
+
+  return false;
 }
 
 let meetingEndDebounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -130,7 +151,7 @@ function onMeetingDetected(): void {
   state.status = 'ready';
 
   // Notify background service worker (FR-006)
-  chrome.runtime.sendMessage({ type: 'MEETING_DETECTED' }).catch(() => {});
+  chrome.runtime.sendMessage({ type: 'MEETING_DETECTED', platform: getPlatform() }).catch(() => {});
 
   // Create and inject status indicator (FR-008)
   injectStatusIndicator();
@@ -179,23 +200,35 @@ function onMeetingEnded(): void {
 function startSignalCapture(): void {
   if (!state.meetingSessionId || !state.userId) return;
 
-  // Observe DOM for speech indicators
-  observeSpeechIndicators();
+  const platform = getPlatform();
 
-  // Observe captions for transcript capture
-  observeCaptions();
+  if (platform === 'google_meet') {
+    // Google Meet: full signal capture (DOM speech + captions + audio)
+    observeSpeechIndicators();
+    observeCaptions();
+  } else {
+    // Teams/Zoom: mic-only transcription via Whisper (DOM is platform-specific and fragile)
+    console.log(`[GleaMeet] ${platform}: using mic-only Whisper transcription`);
+    startMicrophoneDetection(); // Speech start/end detection via Web Speech API
+  }
+
+  // Audio capture works on all platforms
+  startAudioCapture(state.meetingSessionId);
 
   // Emit session state change event
   emitEvent('session_state_changed', {
     previous_state: 'ready',
     new_state: 'active',
     reason: 'coaching_enabled',
+    platform,
   });
 
   // Diagnostic log every 10s
   state.diagnosticInterval = setInterval(() => {
-    const captionEls = CAPTION_SELECTORS.flatMap(sel => Array.from(document.querySelectorAll(sel)));
-    console.log(`[GleaMeet] Diagnostics: events_emitted=${state.eventsEmitted}, speech_active=${state.userSpeaking}, recognition_running=${!!recognition}, caption_elements_found=${captionEls.length}`);
+    const captionEls = platform === 'google_meet'
+      ? CAPTION_SELECTORS.flatMap(sel => Array.from(document.querySelectorAll(sel))).length
+      : 0;
+    console.log(`[GleaMeet] Diagnostics [${platform}]: events_emitted=${state.eventsEmitted}, speech_active=${state.userSpeaking}, recognition_running=${!!recognition}, caption_elements_found=${captionEls}`);
   }, 10000);
 }
 
