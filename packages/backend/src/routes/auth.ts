@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { AuthSessionRequest, AuthSessionResponse } from '@gleameet/shared';
 import { upsertUser } from '../db/queries';
 import { redis } from '../db/redis';
+import { pool } from '../db/pool';
 
 export const authRouter = Router();
 
@@ -72,9 +73,16 @@ authRouter.post('/session', async (req: Request, res: Response) => {
     // Upsert user in Postgres
     const userId = await upsertUser(googleSubjectId, email, displayName);
 
-    // Create session token and store in Redis (24h TTL)
+    // Create session token — store in Redis (fast) AND Postgres (survives restarts)
     const sessionToken = `session:${userId}:${uuidv4()}`;
-    await redis.set(`session:${sessionToken}`, userId, 'EX', 86400);
+    const SESSION_TTL_SECONDS = 86400 * 30; // 30 days
+    await redis.set(`session:${sessionToken}`, userId, 'EX', SESSION_TTL_SECONDS);
+    await pool.query(
+      `INSERT INTO user_sessions (session_token, user_id, expires_at)
+       VALUES ($1, $2, NOW() + INTERVAL '30 days')
+       ON CONFLICT (session_token) DO UPDATE SET last_used_at = NOW()`,
+      [sessionToken, userId]
+    );
 
     const response: AuthSessionResponse = {
       session_token: sessionToken,

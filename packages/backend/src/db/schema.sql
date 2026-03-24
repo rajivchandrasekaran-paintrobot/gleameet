@@ -151,3 +151,14 @@ CREATE TABLE IF NOT EXISTS deletion_audits (
     status VARCHAR(20) NOT NULL DEFAULT 'requested' CHECK (status IN ('requested', 'in_progress', 'completed', 'failed'))
 );
 CREATE INDEX IF NOT EXISTS idx_deletion_audits_user ON deletion_audits(user_id);
+
+-- Session persistence (survives Redis restarts)
+CREATE TABLE IF NOT EXISTS user_sessions (
+  session_token TEXT PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMPTZ NOT NULL,
+  last_used_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_user_sessions_user_id ON user_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_sessions_expires ON user_sessions(expires_at);

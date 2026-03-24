@@ -1,4 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
+import { redis } from '../db/redis';
+import { pool } from '../db/pool';
 
 /** Authenticated request with user context */
 export interface AuthenticatedRequest extends Request {
@@ -8,8 +10,7 @@ export interface AuthenticatedRequest extends Request {
 
 /**
  * Authentication middleware.
- * In production, validates JWT/session token against the session store.
- * For v1 scaffold, extracts user_id from Authorization header.
+ * Validates session token against Redis (fast) with Postgres fallback (survives restarts).
  */
 export function authMiddleware(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
   const authHeader = req.headers.authorization;
@@ -24,25 +25,52 @@ export function authMiddleware(req: AuthenticatedRequest, res: Response, next: N
     return;
   }
 
-  // TODO: Validate token against session store / JWT verification
-  // For scaffold, we decode a simple session token format
   req.sessionToken = token;
-  req.userId = extractUserIdFromToken(token);
 
-  if (!req.userId) {
-    res.status(401).json({ error: 'Invalid session token', code: 'AUTH_INVALID' });
-    return;
-  }
-
-  next();
+  // Validate async: Redis first, Postgres fallback
+  validateSession(token).then(userId => {
+    if (!userId) {
+      res.status(401).json({ error: 'Invalid session token', code: 'AUTH_INVALID' });
+      return;
+    }
+    req.userId = userId;
+    next();
+  }).catch(err => {
+    console.error('[AUTH] Session validation error:', err.message);
+    res.status(500).json({ error: 'Auth validation failed', code: 'AUTH_ERROR' });
+  });
 }
 
-function extractUserIdFromToken(token: string): string | undefined {
-  // Placeholder: in production, verify JWT or look up session in Redis
-  // For now, accept tokens in format "session:<user_id>:<random>"
-  const parts = token.split(':');
-  if (parts.length >= 2 && parts[0] === 'session') {
-    return parts[1];
+async function validateSession(token: string): Promise<string | null> {
+  // 1. Check Redis (fast path)
+  try {
+    const userId = await redis.get(`session:${token}`);
+    if (userId) return userId;
+  } catch (err) {
+    console.warn('[AUTH] Redis check failed, falling back to Postgres:', (err as Error).message);
   }
-  return undefined;
+
+  // 2. Postgres fallback (survives Redis restarts)
+  try {
+    const result = await pool.query(
+      `SELECT user_id FROM user_sessions
+       WHERE session_token = $1 AND expires_at > NOW()`,
+      [token]
+    );
+    if (result.rows[0]) {
+      const userId = result.rows[0].user_id;
+      // Restore to Redis for future fast lookups (30 days)
+      redis.set(`session:${token}`, userId, 'EX', 86400 * 30).catch(() => {});
+      // Update last_used_at
+      pool.query(
+        'UPDATE user_sessions SET last_used_at = NOW() WHERE session_token = $1',
+        [token]
+      ).catch(() => {});
+      return userId;
+    }
+  } catch (err) {
+    console.error('[AUTH] Postgres session lookup failed:', (err as Error).message);
+  }
+
+  return null;
 }
