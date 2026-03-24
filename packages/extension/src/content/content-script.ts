@@ -261,7 +261,8 @@ function startMicrophoneDetection(): void {
         const text = result[0].transcript.trim();
         if (!text) continue;
 
-        if (result.isFinal) {
+        if (result.isFinal && !whisperActive) {
+          // Only emit from Web Speech API if Whisper isn't active (avoid duplicates/noise)
           emitEvent('transcript_segment', {
             text,
             speaker: 'user',
@@ -337,6 +338,9 @@ function observeCaptions(): void {
                      !!el.closest('[data-self-name]') ||
                      !!el.closest('[data-is-self="true"]');
       const speaker = isSelf ? 'user' : 'other';
+
+      // Skip caption-based transcript if Whisper is active — Whisper is more accurate
+      if (whisperActive) continue;
 
       console.log(`[GleaMeet] Caption captured (${speaker}): ${text.slice(0, 80)}`);
       emitEvent('transcript_segment', {
@@ -443,9 +447,12 @@ async function getStoredToken(): Promise<string | null> {
 }
 
 /** Start capturing mic audio, transcribing in 10-second chunks via Whisper */
+let whisperActive = false; // When true, suppress Web Speech API transcripts
+
 function startAudioCapture(meetingSessionId: string): void {
   navigator.mediaDevices.getUserMedia({ audio: true })
     .then((micStream) => {
+      whisperActive = true; // Whisper is now the primary transcript source
       const recorder = new MediaRecorder(micStream, { mimeType: 'audio/webm' });
       let chunks: Blob[] = [];
 

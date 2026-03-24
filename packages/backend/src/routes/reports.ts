@@ -36,12 +36,17 @@ reportsRouter.get('/:meeting_session_id', async (req: AuthenticatedRequest, res:
           );
           const meetingStartMs = new Date(sessionResult.rows[0].started_at).getTime();
 
-          const speechEntries: TranscriptWithNudgesEntry[] = savedTranscript.entries.map(e => ({
-            type: 'speech' as const,
-            speaker: e.speaker,
-            text: e.text,
-            timestamp_ms: e.start_offset_ms,
-          }));
+          const speechEntries: TranscriptWithNudgesEntry[] = savedTranscript.entries
+            .filter(e => e.text && e.text.trim().length > 5) // filter empty/noise
+            .map(e => ({
+              type: 'speech' as const,
+              speaker: e.speaker,
+              // Use event_time_utc relative to meeting start (start_offset_ms stores epoch time, not offset)
+              text: e.text,
+              timestamp_ms: e.event_time_utc
+                ? new Date(e.event_time_utc).getTime() - meetingStartMs
+                : e.start_offset_ms,
+            }));
 
           const nudgeEntries: TranscriptWithNudgesEntry[] = prompts
             .filter(p => p.shown_at)

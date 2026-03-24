@@ -188,7 +188,7 @@
           const result = event.results[i];
           const text = result[0].transcript.trim();
           if (!text) continue;
-          if (result.isFinal) {
+          if (result.isFinal && !whisperActive) {
             emitEvent("transcript_segment", {
               text,
               speaker: "user",
@@ -255,6 +255,7 @@
         const containerText = container?.previousElementSibling?.textContent?.trim() || "";
         const isSelf = containerText === "You" || !!el.closest("[data-self-name]") || !!el.closest('[data-is-self="true"]');
         const speaker = isSelf ? "user" : "other";
+        if (whisperActive) continue;
         console.log(`[GleaMeet] Caption captured (${speaker}): ${text.slice(0, 80)}`);
         emitEvent("transcript_segment", {
           text,
@@ -298,8 +299,10 @@
       });
     });
   }
+  var whisperActive = false;
   function startAudioCapture(meetingSessionId) {
     navigator.mediaDevices.getUserMedia({ audio: true }).then((micStream) => {
+      whisperActive = true;
       const recorder = new MediaRecorder(micStream, { mimeType: "audio/webm" });
       let chunks = [];
       recorder.ondataavailable = (e) => {
