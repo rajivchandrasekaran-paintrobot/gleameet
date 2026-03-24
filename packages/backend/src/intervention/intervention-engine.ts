@@ -220,7 +220,7 @@ Respond in exactly this JSON format (no markdown):
 
     const client = buildLLMClient();
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 2000);
+    const timeout = setTimeout(() => controller.abort(), 6000);
 
     const response = await client.chat.completions.create(
       {
@@ -314,7 +314,7 @@ Respond in exactly this JSON format (no markdown):
 
     const client = buildLLMClient();
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 2000);
+    const timeout = setTimeout(() => controller.abort(), 6000);
 
     const response = await client.chat.completions.create(
       { model: LLM_MODEL, messages: [{ role: 'user', content: prompt }], max_tokens: 150, temperature: 0.7 },
