@@ -29,7 +29,10 @@ app.use(cors({
     if (
       !origin ||
       origin.startsWith('chrome-extension://') ||
-      origin.startsWith('http://localhost')
+      origin.startsWith('http://localhost') ||
+      origin === 'https://meet.google.com' ||
+      origin === 'https://teams.microsoft.com' ||
+      origin === 'https://app.zoom.us'
     ) {
       cb(null, true);
     } else {
