@@ -56,54 +56,11 @@ async function endMeeting(meetingSessionId) {
     meeting_session_id: meetingSessionId
   });
 }
-async function transcribeAudio(blob, stream, meetingSessionId) {
-  const apiBase = await getApiBase();
-  const formData = new FormData();
-  formData.append("audio", blob, "chunk.webm");
-  formData.append("stream", stream);
-  formData.append("meeting_session_id", meetingSessionId);
-  const headers = {};
-  if (sessionToken) {
-    headers["Authorization"] = `Bearer ${sessionToken}`;
-  }
-  const response = await fetch(`${apiBase}/audio/transcribe`, {
-    method: "POST",
-    headers,
-    body: formData
-  });
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: "Unknown error" }));
-    throw new Error(error.error || `API error: ${response.status}`);
-  }
-  return response.json();
-}
 function setSessionToken(token) {
   sessionToken = token;
 }
 function getSessionToken() {
   return sessionToken;
-}
-
-// src/utils/event-factory.ts
-function generateUUID() {
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = Math.random() * 16 | 0;
-    const v = c === "x" ? r : r & 3 | 8;
-    return v.toString(16);
-  });
-}
-function createEvent(meetingSessionId, userId, eventType, payload, captureConfidence = null) {
-  return {
-    event_id: generateUUID(),
-    meeting_session_id: meetingSessionId,
-    user_id: userId,
-    platform: "google_meet",
-    event_type: eventType,
-    event_time_utc: (/* @__PURE__ */ new Date()).toISOString(),
-    source: "extension",
-    capture_confidence: captureConfidence,
-    payload
-  };
 }
 
 // src/background/service-worker.ts
@@ -113,9 +70,7 @@ var state = {
   status: "off",
   eventBuffer: [],
   pollingInterval: null,
-  batchInterval: null,
-  audioRecorders: [],
-  audioIntervals: []
+  batchInterval: null
 };
 chrome.storage.local.get(["sessionToken", "userId"], (data) => {
   if (data.sessionToken) {
@@ -199,80 +154,6 @@ async function handleAuthenticate(googleIdToken) {
     return { error: err.message };
   }
 }
-function startAudioCapture(meetingSessionId) {
-  chrome.tabCapture.capture({ audio: true, video: false }, (stream) => {
-    if (!stream) {
-      console.warn("[GleaMeet] Tab audio capture failed \u2014 no stream returned");
-      return;
-    }
-    recordAndTranscribe(stream, "tab", meetingSessionId);
-  });
-  navigator.mediaDevices.getUserMedia({ audio: true }).then((micStream) => {
-    recordAndTranscribe(micStream, "mic", meetingSessionId);
-  }).catch((e) => {
-    console.warn("[GleaMeet] Mic capture failed:", e);
-  });
-}
-function recordAndTranscribe(stream, streamType, meetingSessionId) {
-  const recorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
-  let chunks = [];
-  recorder.ondataavailable = (e) => {
-    if (e.data.size > 0) chunks.push(e.data);
-  };
-  recorder.onstop = async () => {
-    const blob = new Blob(chunks, { type: "audio/webm" });
-    chunks = [];
-    if (blob.size < 1e3) return;
-    try {
-      const { text } = await transcribeAudio(blob, streamType, meetingSessionId);
-      if (text?.trim() && state.userId) {
-        const speaker = streamType === "mic" ? "user" : "other";
-        const event = createEvent(
-          meetingSessionId,
-          state.userId,
-          "transcript_segment",
-          {
-            text: text.trim(),
-            speaker,
-            start_offset_ms: Date.now(),
-            end_offset_ms: Date.now()
-          },
-          0.9
-        );
-        if (state.status === "active") {
-          state.eventBuffer.push(event);
-        }
-      }
-    } catch (err) {
-      console.error(`[GleaMeet] Whisper transcription failed (${streamType}):`, err);
-    }
-  };
-  recorder.start();
-  const interval = setInterval(() => {
-    if (recorder.state === "recording") {
-      recorder.stop();
-      recorder.start();
-    }
-  }, 1e4);
-  state.audioRecorders.push(recorder);
-  state.audioIntervals.push(interval);
-}
-function stopAudioCapture() {
-  for (const interval of state.audioIntervals) {
-    clearInterval(interval);
-  }
-  for (const recorder of state.audioRecorders) {
-    if (recorder.state === "recording") {
-      try {
-        recorder.stop();
-      } catch (_) {
-      }
-    }
-    recorder.stream.getTracks().forEach((t) => t.stop());
-  }
-  state.audioRecorders = [];
-  state.audioIntervals = [];
-}
 async function handleStartCoaching(message) {
   try {
     if (!getSessionToken()) {
@@ -290,7 +171,6 @@ async function handleStartCoaching(message) {
     state.eventBuffer = [];
     state.batchInterval = setInterval(flushEventBuffer, 3e3);
     state.pollingInterval = setInterval(pollForPrompts, 2e3);
-    startAudioCapture(response.meeting_session_id);
     chrome.tabs.query({ url: "https://meet.google.com/*" }, (tabs) => {
       for (const tab of tabs) {
         if (tab.id) {
@@ -316,7 +196,6 @@ async function handleStopCoaching() {
     if (state.meetingSessionId) {
       await flushEventBuffer();
       const result = await endMeeting(state.meetingSessionId);
-      stopAudioCapture();
       if (state.batchInterval) clearInterval(state.batchInterval);
       if (state.pollingInterval) clearInterval(state.pollingInterval);
       chrome.tabs.query({ url: "https://meet.google.com/*" }, (tabs) => {

@@ -4,7 +4,7 @@
  * Runs as a Manifest V3 service worker.
  */
 
-import { setSessionToken, getSessionToken, sendEventBatch, pollPrompts, endMeeting, startMeeting, ackPrompt, createSession, transcribeAudio } from '../utils/api-client';
+import { setSessionToken, getSessionToken, sendEventBatch, pollPrompts, endMeeting, startMeeting, ackPrompt, createSession } from '../utils/api-client';
 import { createEvent } from '../utils/event-factory';
 import type { RawEvent, MeetingStartRequest, PromptEvent, PromptAckRequest } from '@gleameet/shared';
 
@@ -16,8 +16,6 @@ interface SessionState {
   eventBuffer: RawEvent[];
   pollingInterval: ReturnType<typeof setInterval> | null;
   batchInterval: ReturnType<typeof setInterval> | null;
-  audioRecorders: MediaRecorder[];
-  audioIntervals: ReturnType<typeof setInterval>[];
 }
 
 const state: SessionState = {
@@ -27,8 +25,6 @@ const state: SessionState = {
   eventBuffer: [],
   pollingInterval: null,
   batchInterval: null,
-  audioRecorders: [],
-  audioIntervals: [],
 };
 
 // Restore auth token from chrome.storage on startup
@@ -136,99 +132,6 @@ async function handleAuthenticate(googleIdToken: string): Promise<any> {
   }
 }
 
-// --- Audio Capture & Whisper Transcription ---
-
-/** Start capturing tab audio and mic audio, transcribing via Whisper */
-function startAudioCapture(meetingSessionId: string): void {
-  // 1. Capture tab audio (both speakers)
-  chrome.tabCapture.capture({ audio: true, video: false }, (stream) => {
-    if (!stream) {
-      console.warn('[GleaMeet] Tab audio capture failed — no stream returned');
-      return;
-    }
-    recordAndTranscribe(stream, 'tab', meetingSessionId);
-  });
-
-  // 2. Capture mic separately for cleaner user voice
-  navigator.mediaDevices.getUserMedia({ audio: true })
-    .then((micStream) => {
-      recordAndTranscribe(micStream, 'mic', meetingSessionId);
-    })
-    .catch((e) => {
-      console.warn('[GleaMeet] Mic capture failed:', e);
-    });
-}
-
-/** Record a MediaStream in 10-second chunks and send each to Whisper */
-function recordAndTranscribe(stream: MediaStream, streamType: 'mic' | 'tab', meetingSessionId: string): void {
-  const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-  let chunks: Blob[] = [];
-
-  recorder.ondataavailable = (e) => {
-    if (e.data.size > 0) chunks.push(e.data);
-  };
-
-  recorder.onstop = async () => {
-    const blob = new Blob(chunks, { type: 'audio/webm' });
-    chunks = [];
-
-    if (blob.size < 1000) return; // Skip silent/tiny chunks
-
-    try {
-      const { text } = await transcribeAudio(blob, streamType, meetingSessionId);
-      if (text?.trim() && state.userId) {
-        const speaker = streamType === 'mic' ? 'user' : 'other';
-        const event = createEvent(
-          meetingSessionId,
-          state.userId,
-          'transcript_segment',
-          {
-            text: text.trim(),
-            speaker,
-            start_offset_ms: Date.now(),
-            end_offset_ms: Date.now(),
-          },
-          0.9
-        );
-        // Buffer the event just like content script events
-        if (state.status === 'active') {
-          state.eventBuffer.push(event);
-        }
-      }
-    } catch (err) {
-      console.error(`[GleaMeet] Whisper transcription failed (${streamType}):`, err);
-    }
-  };
-
-  // Record in 10-second chunks: stop triggers onstop (which sends), then restart
-  recorder.start();
-  const interval = setInterval(() => {
-    if (recorder.state === 'recording') {
-      recorder.stop();
-      recorder.start();
-    }
-  }, 10000);
-
-  state.audioRecorders.push(recorder);
-  state.audioIntervals.push(interval);
-}
-
-/** Stop all audio recorders and clear intervals */
-function stopAudioCapture(): void {
-  for (const interval of state.audioIntervals) {
-    clearInterval(interval);
-  }
-  for (const recorder of state.audioRecorders) {
-    if (recorder.state === 'recording') {
-      try { recorder.stop(); } catch (_) {}
-    }
-    // Stop all tracks on the underlying stream
-    recorder.stream.getTracks().forEach(t => t.stop());
-  }
-  state.audioRecorders = [];
-  state.audioIntervals = [];
-}
-
 /** Start a coaching session */
 async function handleStartCoaching(message: any): Promise<any> {
   try {
@@ -255,10 +158,7 @@ async function handleStartCoaching(message: any): Promise<any> {
     // Start prompt polling every 2 seconds (per SRS)
     state.pollingInterval = setInterval(pollForPrompts, 2000);
 
-    // Start Whisper-based audio capture
-    startAudioCapture(response.meeting_session_id);
-
-    // Notify content script that coaching has started
+    // Notify content script that coaching has started (audio capture runs there)
     chrome.tabs.query({ url: 'https://meet.google.com/*' }, (tabs) => {
       for (const tab of tabs) {
         if (tab.id) {
@@ -289,9 +189,6 @@ async function handleStopCoaching(): Promise<any> {
 
       // End meeting
       const result = await endMeeting(state.meetingSessionId);
-
-      // Stop audio capture
-      stopAudioCapture();
 
       // Clear intervals
       if (state.batchInterval) clearInterval(state.batchInterval);
