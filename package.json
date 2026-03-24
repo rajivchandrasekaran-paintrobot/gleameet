@@ -7,7 +7,9 @@
     "packages/shared",
     "packages/law-registry",
     "packages/backend",
-    "packages/extension"
+    "packages/extension",
+    "packages/teams-app",
+    "packages/zoom-app"
   ],
   "scripts": {
     "build": "npm run build --workspaces",

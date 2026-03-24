@@ -1,0 +1,21 @@
+{
+  "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.16/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.16",
+  "id": "gleameet-teams-app",
+  "version": "1.0.0",
+  "name": { "short": "Gleameet", "full": "Gleameet — Meeting Coach" },
+  "description": {
+    "short": "Private AI behavioral coaching during meetings",
+    "full": "Real-time behavioral coaching using AI. Private nudges during calls, post-meeting reports."
+  },
+  "icons": { "outline": "outline.png", "color": "color.png" },
+  "accentColor": "#0066cc",
+  "configurableTabs": [],
+  "staticTabs": [],
+  "meetingExtensionDefinition": {
+    "scenes": [],
+    "supportsStreaming": false
+  },
+  "permissions": ["identity", "messageTeamMembers"],
+  "validDomains": ["gleameet.onrender.com"]
+}
