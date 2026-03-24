@@ -132,8 +132,10 @@ export const Popup: React.FC = () => {
         googleIdToken: token,
       }, (response) => {
         if (response?.ok) {
-          setState(prev => ({ ...prev, authenticated: true, userId: response.userId }));
+          setState(prev => ({ ...prev, authenticated: true, userId: response.userId, status: 'ready' }));
         } else {
+          console.error('[GleaMeet] Auth response error:', response?.error);
+          setError(response?.error || 'Sign in failed');
           setState(prev => ({ ...prev, status: "error" }));
         }
       });

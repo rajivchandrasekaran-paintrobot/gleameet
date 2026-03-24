@@ -184,14 +184,18 @@ async function handleMessage(message) {
 }
 async function handleAuthenticate(googleIdToken) {
   try {
+    console.log("[GleaMeet] Authenticating with backend...");
     const result = await createSession(googleIdToken);
     state.userId = result.user_id;
+    setSessionToken(result.session_token);
     chrome.storage.local.set({
       sessionToken: result.session_token,
       userId: result.user_id
     });
+    console.log("[GleaMeet] Auth success, userId:", result.user_id);
     return { ok: true, userId: result.user_id };
   } catch (err) {
+    console.error("[GleaMeet] Auth failed:", err.message);
     return { error: err.message };
   }
 }

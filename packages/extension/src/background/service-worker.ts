@@ -119,15 +119,19 @@ async function handleMessage(message: any): Promise<any> {
 /** Authenticate with backend using Google ID token */
 async function handleAuthenticate(googleIdToken: string): Promise<any> {
   try {
+    console.log('[GleaMeet] Authenticating with backend...');
     const result = await createSession(googleIdToken);
     state.userId = result.user_id;
+    setSessionToken(result.session_token);
     // Store token persistently
     chrome.storage.local.set({
       sessionToken: result.session_token,
       userId: result.user_id,
     });
+    console.log('[GleaMeet] Auth success, userId:', result.user_id);
     return { ok: true, userId: result.user_id };
   } catch (err: any) {
+    console.error('[GleaMeet] Auth failed:', err.message);
     return { error: err.message };
   }
 }
