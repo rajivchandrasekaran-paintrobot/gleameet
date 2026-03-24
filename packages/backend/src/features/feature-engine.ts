@@ -321,6 +321,11 @@ function updateStateFromEvent(event: RawEvent, state: MeetingState): void {
 
     case 'transcript_segment': {
       const payload = event.payload as any;
+      if (payload?.text) {
+        // Push to rolling transcript buffer for both speakers
+        state.recent_transcript.push({ speaker: payload.speaker, text: payload.text, ts: now });
+        if (state.recent_transcript.length > 10) state.recent_transcript.shift();
+      }
       if (payload?.speaker === 'user' && payload?.text) {
         state.transcript_segment_count++;
         // Each transcript segment counts as a speaking turn

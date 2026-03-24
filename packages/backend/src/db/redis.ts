@@ -87,6 +87,8 @@ export interface MeetingState {
   // Track law triggers for reports
   law_trigger_ids: string[];
   prompt_ids: string[];
+  // Rolling buffer of recent transcript segments for LLM nudge personalization
+  recent_transcript: Array<{ speaker: 'user' | 'other'; text: string; ts: number }>;
 }
 
 /** Initialize meeting state in Redis */
@@ -126,6 +128,7 @@ export async function initMeetingState(sessionId: string, userId: string): Promi
     shared_goal_language_present: false,
     law_trigger_ids: [],
     prompt_ids: [],
+    recent_transcript: [],
   };
   await redis.set(meetingStateKey(sessionId), JSON.stringify(state), 'EX', 14400); // 4h TTL
 }

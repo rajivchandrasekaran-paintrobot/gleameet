@@ -10,6 +10,7 @@ import {
   isUserSpeaking,
 } from '../db/redis';
 import { v4 as uuidv4 } from 'uuid';
+import { buildLLMClient, LLM_MODEL } from '../services/llm-client';
 
 /** Candidate prompt with ranking score */
 interface RankedCandidate {
@@ -110,6 +111,19 @@ export async function rankAndSelectPrompt(
   // SR-006: Favor silence over low-confidence coaching
   if (selected.score < 0.2) return null;
 
+  // Generate personalized nudge via LLM (non-blocking fallback to static text)
+  const law = loadLawById(selected.trigger.law_id);
+  if (law) {
+    const personalized = await generatePersonalizedNudge(
+      law,
+      selected.trigger,
+      state,
+      selected.prompt.short_text
+    );
+    selected.prompt.short_text = personalized.short_text;
+    selected.prompt.rationale_text = personalized.rationale_text;
+  }
+
   // Set global cooldown (FR-046)
   await setGlobalCooldown(meetingSessionId, 15); // 15s between prompts
   await incrementPromptCount(meetingSessionId);
@@ -156,4 +170,82 @@ function computeNovelty(trigger: LawTrigger, state: MeetingState): number {
   // Novelty decreases with more prompts shown
   // In production, track per-law trigger history for better novelty scoring
   return Math.max(0.3, 1.0 - (state.prompts_shown_count * 0.15));
+}
+
+/** Generate a personalized nudge using GPT-4o with transcript context */
+async function generatePersonalizedNudge(
+  law: any,
+  trigger: LawTrigger,
+  state: MeetingState,
+  templateText: string
+): Promise<{ short_text: string; rationale_text: string }> {
+  const fallback = { short_text: templateText, rationale_text: law.meeting_relevance?.slice(0, 60) || '' };
+
+  try {
+    const recentLines = (state.recent_transcript || []).slice(-5);
+    if (recentLines.length === 0) return fallback;
+
+    const transcriptBlock = recentLines
+      .map((l) => `[${l.speaker}]: ${l.text}`)
+      .join('\n');
+
+    const featureSnapshot = trigger.feature_snapshot_json
+      ? (typeof trigger.feature_snapshot_json === 'string'
+          ? trigger.feature_snapshot_json
+          : JSON.stringify(trigger.feature_snapshot_json))
+      : '{}';
+
+    const prompt = `You are a real-time meeting coach. Rewrite the nudge below so it feels personal and in-the-moment.
+
+Behavioral law: ${law.name} — ${law.description}
+Trigger confidence: ${trigger.trigger_confidence}
+Feature snapshot: ${featureSnapshot}
+
+Recent conversation:
+${transcriptBlock}
+
+Template nudge: "${templateText}"
+
+Rules:
+- Output ONE short sentence, max 12 words
+- Reference something specific from the conversation (a word they used, a pattern)
+- Make it actionable, not generic
+- Do NOT use quotes around the sentence
+
+Respond in exactly this JSON format (no markdown):
+{"short_text": "...", "rationale_text": "..."}
+
+rationale_text should explain WHY in max 10 words.`;
+
+    const client = buildLLMClient();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2000);
+
+    const response = await client.chat.completions.create(
+      {
+        model: LLM_MODEL,
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 150,
+        temperature: 0.7,
+      },
+      { signal: controller.signal }
+    );
+
+    clearTimeout(timeout);
+
+    const content = response.choices?.[0]?.message?.content?.trim();
+    if (!content) return fallback;
+
+    const parsed = JSON.parse(content);
+    if (parsed.short_text && typeof parsed.short_text === 'string') {
+      return {
+        short_text: parsed.short_text.slice(0, 100),
+        rationale_text: (parsed.rationale_text || '').slice(0, 80),
+      };
+    }
+    return fallback;
+  } catch (err: any) {
+    console.warn(`[INTERVENTION] LLM nudge generation failed, using template: ${err.message}`);
+    return fallback;
+  }
 }
