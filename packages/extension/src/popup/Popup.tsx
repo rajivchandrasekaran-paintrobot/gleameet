@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { getHistory, getTranscript, setSessionToken } from '../utils/api-client';
+import { getHistory, getTranscript, getReport, setSessionToken } from '../utils/api-client';
+import type { PostMeetingReport, TranscriptWithNudgesEntry } from '@gleameet/shared';
 
 type SessionStatus = 'off' | 'ready' | 'active' | 'muted' | 'error';
-type View = 'main' | 'history' | 'transcript';
+type View = 'main' | 'history' | 'transcript' | 'report';
+type ReportTab = 'summary' | 'transcript-nudges';
 
 interface PopupState {
   status: SessionStatus;
@@ -18,6 +20,7 @@ interface MeetingEntry {
   ended_at: string | null;
   duration_seconds: number | null;
   transcript_available: boolean;
+  report_available: boolean;
 }
 
 interface TranscriptEntry {
@@ -64,6 +67,8 @@ export const Popup: React.FC = () => {
   const [view, setView] = useState<View>('main');
   const [meetings, setMeetings] = useState<MeetingEntry[]>([]);
   const [transcript, setTranscript] = useState<TranscriptData | null>(null);
+  const [report, setReport] = useState<PostMeetingReport | null>(null);
+  const [reportTab, setReportTab] = useState<ReportTab>('summary');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -191,6 +196,73 @@ export const Popup: React.FC = () => {
     }
   };
 
+  const handleShowReport = async (meetingSessionId: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await getReport(meetingSessionId);
+      setReport(data);
+      setReportTab('summary');
+      setView('report');
+    } catch (e: any) {
+      setError(e.message || 'Failed to load report');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDownloadReport = () => {
+    if (!report) return;
+    const lines: string[] = [];
+
+    lines.push('=== MEETING ANALYSIS ===');
+    if (report.summary_analysis) {
+      lines.push(report.summary_analysis);
+    }
+    lines.push('');
+
+    lines.push('=== STRENGTHS ===');
+    for (const s of report.strengths_json) {
+      lines.push(`- ${s}`);
+    }
+    lines.push('');
+
+    lines.push('=== GROWTH AREAS ===');
+    for (const g of report.growth_areas_json) {
+      lines.push(`- ${g}`);
+    }
+    lines.push('');
+
+    lines.push('=== RECOMMENDED ACTIONS ===');
+    report.summary_json.recommended_actions.forEach((ra, i) => {
+      lines.push(`${i + 1}. ${ra.action} — Why: ${ra.reason}`);
+    });
+    lines.push('');
+
+    lines.push('=== TRANSCRIPT WITH COACHING ===');
+    if (report.transcript_with_nudges) {
+      for (const entry of report.transcript_with_nudges) {
+        const ts = formatTimestamp(entry.timestamp_ms);
+        if (entry.type === 'speech') {
+          const speaker = entry.speaker === 'user' ? 'You' : 'Other';
+          lines.push(`[${ts}] ${speaker}: ${entry.text}`);
+        } else if (entry.type === 'nudge') {
+          lines.push(`[COACH NUDGE] ${entry.text}`);
+        } else {
+          lines.push(`[COACH REINFORCEMENT] ${entry.text}`);
+        }
+      }
+    }
+
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `report-${report.meeting_session_id.slice(0, 8)}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const handleDownloadTranscript = () => {
     if (!transcript) return;
     const lines = [
@@ -220,6 +292,119 @@ export const Popup: React.FC = () => {
     muted: 'Coaching muted',
     error: 'Error',
   };
+
+  // Report view
+  if (view === 'report' && report) {
+    return (
+      <div className="popup-container">
+        <div className="popup-header">
+          <button className="btn btn-secondary btn-sm" onClick={() => setView('history')}>
+            ← Back
+          </button>
+          <h1>Report</h1>
+          <button className="btn btn-primary btn-sm" onClick={handleDownloadReport} style={{ marginLeft: 'auto' }}>
+            ⬇ Download
+          </button>
+        </div>
+        <div className="report-tabs">
+          <button
+            className={`report-tab ${reportTab === 'summary' ? 'report-tab-active' : ''}`}
+            onClick={() => setReportTab('summary')}
+          >
+            Summary
+          </button>
+          <button
+            className={`report-tab ${reportTab === 'transcript-nudges' ? 'report-tab-active' : ''}`}
+            onClick={() => setReportTab('transcript-nudges')}
+          >
+            Transcript + Nudges
+          </button>
+        </div>
+
+        {reportTab === 'summary' && (
+          <div className="report-section">
+            {report.summary_analysis && (
+              <div className="report-block">
+                <p className="report-narrative">{report.summary_analysis}</p>
+              </div>
+            )}
+            {report.strengths_json.length > 0 && (
+              <div className="report-block">
+                <h3 className="report-block-title">Strengths</h3>
+                <ul className="report-list">
+                  {report.strengths_json.map((s, i) => <li key={i}>{s}</li>)}
+                </ul>
+              </div>
+            )}
+            {report.growth_areas_json.length > 0 && (
+              <div className="report-block">
+                <h3 className="report-block-title">Growth Areas</h3>
+                <ul className="report-list">
+                  {report.growth_areas_json.map((g, i) => <li key={i}>{g}</li>)}
+                </ul>
+              </div>
+            )}
+            {report.summary_json.recommended_actions.length > 0 && (
+              <div className="report-block">
+                <h3 className="report-block-title">Recommended Actions</h3>
+                <ul className="report-list">
+                  {report.summary_json.recommended_actions.map((ra, i) => (
+                    <li key={i}>
+                      <strong>{ra.action}</strong>
+                      <span className="report-action-reason"> — {ra.reason}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+
+        {reportTab === 'transcript-nudges' && (
+          <div className="report-transcript-list">
+            {(!report.transcript_with_nudges || report.transcript_with_nudges.length === 0) && (
+              <p className="empty-message">No annotated transcript available.</p>
+            )}
+            {report.transcript_with_nudges?.map((entry, i) => {
+              if (entry.type === 'speech') {
+                return (
+                  <div key={i} className="transcript-entry">
+                    <div className="transcript-meta">
+                      <span className={`transcript-speaker speaker-${entry.speaker}`}>
+                        {entry.speaker === 'user' ? 'You' : 'Other'}
+                      </span>
+                      <span className="transcript-time">{formatTimestamp(entry.timestamp_ms)}</span>
+                    </div>
+                    <div className="transcript-text">{entry.text}</div>
+                  </div>
+                );
+              }
+              if (entry.type === 'nudge') {
+                return (
+                  <div key={i} className="transcript-entry coach-nudge">
+                    <div className="transcript-meta">
+                      <span className="transcript-speaker speaker-coach">💡 Coach</span>
+                      <span className="transcript-time">{formatTimestamp(entry.timestamp_ms)}</span>
+                    </div>
+                    <div className="transcript-text">{entry.text}</div>
+                  </div>
+                );
+              }
+              return (
+                <div key={i} className="transcript-entry coach-reinforcement">
+                  <div className="transcript-meta">
+                    <span className="transcript-speaker speaker-coach">✅ Coach</span>
+                    <span className="transcript-time">{formatTimestamp(entry.timestamp_ms)}</span>
+                  </div>
+                  <div className="transcript-text">{entry.text}</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   // Transcript view
   if (view === 'transcript' && transcript) {
@@ -282,14 +467,24 @@ export const Popup: React.FC = () => {
                   {m.duration_seconds != null && ` · ${formatDuration(m.duration_seconds)}`}
                 </div>
               </div>
-              {m.transcript_available && (
-                <button
-                  className="btn btn-secondary btn-sm"
-                  onClick={() => handleShowTranscript(m.meeting_session_id)}
-                >
-                  📄 Transcript
-                </button>
-              )}
+              <div className="history-buttons">
+                {m.transcript_available && (
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => handleShowTranscript(m.meeting_session_id)}
+                  >
+                    📄 Transcript
+                  </button>
+                )}
+                {m.report_available && (
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => handleShowReport(m.meeting_session_id)}
+                  >
+                    📊 Report
+                  </button>
+                )}
+              </div>
             </div>
           ))}
         </div>

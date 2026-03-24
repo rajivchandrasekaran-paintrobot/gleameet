@@ -24533,6 +24533,9 @@
   async function getTranscript(meetingSessionId) {
     return apiRequest("GET", `/history/${meetingSessionId}/transcript`);
   }
+  async function getReport(meetingSessionId) {
+    return apiRequest("GET", `/reports/${meetingSessionId}`);
+  }
   function setSessionToken(token) {
     sessionToken = token;
   }
@@ -24571,6 +24574,8 @@
     const [view, setView] = (0, import_react.useState)("main");
     const [meetings, setMeetings] = (0, import_react.useState)([]);
     const [transcript, setTranscript] = (0, import_react.useState)(null);
+    const [report, setReport] = (0, import_react.useState)(null);
+    const [reportTab, setReportTab] = (0, import_react.useState)("summary");
     const [loading, setLoading] = (0, import_react.useState)(false);
     const [error, setError] = (0, import_react.useState)(null);
     (0, import_react.useEffect)(() => {
@@ -24681,6 +24686,65 @@
         setLoading(false);
       }
     };
+    const handleShowReport = async (meetingSessionId) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const data = await getReport(meetingSessionId);
+        setReport(data);
+        setReportTab("summary");
+        setView("report");
+      } catch (e) {
+        setError(e.message || "Failed to load report");
+      } finally {
+        setLoading(false);
+      }
+    };
+    const handleDownloadReport = () => {
+      if (!report) return;
+      const lines = [];
+      lines.push("=== MEETING ANALYSIS ===");
+      if (report.summary_analysis) {
+        lines.push(report.summary_analysis);
+      }
+      lines.push("");
+      lines.push("=== STRENGTHS ===");
+      for (const s of report.strengths_json) {
+        lines.push(`- ${s}`);
+      }
+      lines.push("");
+      lines.push("=== GROWTH AREAS ===");
+      for (const g of report.growth_areas_json) {
+        lines.push(`- ${g}`);
+      }
+      lines.push("");
+      lines.push("=== RECOMMENDED ACTIONS ===");
+      report.summary_json.recommended_actions.forEach((ra, i) => {
+        lines.push(`${i + 1}. ${ra.action} \u2014 Why: ${ra.reason}`);
+      });
+      lines.push("");
+      lines.push("=== TRANSCRIPT WITH COACHING ===");
+      if (report.transcript_with_nudges) {
+        for (const entry of report.transcript_with_nudges) {
+          const ts = formatTimestamp(entry.timestamp_ms);
+          if (entry.type === "speech") {
+            const speaker = entry.speaker === "user" ? "You" : "Other";
+            lines.push(`[${ts}] ${speaker}: ${entry.text}`);
+          } else if (entry.type === "nudge") {
+            lines.push(`[COACH NUDGE] ${entry.text}`);
+          } else {
+            lines.push(`[COACH REINFORCEMENT] ${entry.text}`);
+          }
+        }
+      }
+      const blob = new Blob([lines.join("\n")], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `report-${report.meeting_session_id.slice(0, 8)}.txt`;
+      a.click();
+      URL.revokeObjectURL(url);
+    };
     const handleDownloadTranscript = () => {
       if (!transcript) return;
       const lines = [
@@ -24709,6 +24773,84 @@
       muted: "Coaching muted",
       error: "Error"
     };
+    if (view === "report" && report) {
+      return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "popup-container", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "popup-header", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-secondary btn-sm", onClick: () => setView("history"), children: "\u2190 Back" }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h1", { children: "Report" }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-primary btn-sm", onClick: handleDownloadReport, style: { marginLeft: "auto" }, children: "\u2B07 Download" })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "report-tabs", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+            "button",
+            {
+              className: `report-tab ${reportTab === "summary" ? "report-tab-active" : ""}`,
+              onClick: () => setReportTab("summary"),
+              children: "Summary"
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+            "button",
+            {
+              className: `report-tab ${reportTab === "transcript-nudges" ? "report-tab-active" : ""}`,
+              onClick: () => setReportTab("transcript-nudges"),
+              children: "Transcript + Nudges"
+            }
+          )
+        ] }),
+        reportTab === "summary" && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "report-section", children: [
+          report.summary_analysis && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "report-block", children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "report-narrative", children: report.summary_analysis }) }),
+          report.strengths_json.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "report-block", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h3", { className: "report-block-title", children: "Strengths" }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("ul", { className: "report-list", children: report.strengths_json.map((s, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", { children: s }, i)) })
+          ] }),
+          report.growth_areas_json.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "report-block", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h3", { className: "report-block-title", children: "Growth Areas" }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("ul", { className: "report-list", children: report.growth_areas_json.map((g, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", { children: g }, i)) })
+          ] }),
+          report.summary_json.recommended_actions.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "report-block", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h3", { className: "report-block-title", children: "Recommended Actions" }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("ul", { className: "report-list", children: report.summary_json.recommended_actions.map((ra, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("li", { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: ra.action }),
+              /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { className: "report-action-reason", children: [
+                " \u2014 ",
+                ra.reason
+              ] })
+            ] }, i)) })
+          ] })
+        ] }),
+        reportTab === "transcript-nudges" && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "report-transcript-list", children: [
+          (!report.transcript_with_nudges || report.transcript_with_nudges.length === 0) && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "empty-message", children: "No annotated transcript available." }),
+          report.transcript_with_nudges?.map((entry, i) => {
+            if (entry.type === "speech") {
+              return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "transcript-entry", children: [
+                /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "transcript-meta", children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: `transcript-speaker speaker-${entry.speaker}`, children: entry.speaker === "user" ? "You" : "Other" }),
+                  /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "transcript-time", children: formatTimestamp(entry.timestamp_ms) })
+                ] }),
+                /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "transcript-text", children: entry.text })
+              ] }, i);
+            }
+            if (entry.type === "nudge") {
+              return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "transcript-entry coach-nudge", children: [
+                /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "transcript-meta", children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "transcript-speaker speaker-coach", children: "\u{1F4A1} Coach" }),
+                  /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "transcript-time", children: formatTimestamp(entry.timestamp_ms) })
+                ] }),
+                /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "transcript-text", children: entry.text })
+              ] }, i);
+            }
+            return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "transcript-entry coach-reinforcement", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "transcript-meta", children: [
+                /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "transcript-speaker speaker-coach", children: "\u2705 Coach" }),
+                /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "transcript-time", children: formatTimestamp(entry.timestamp_ms) })
+              ] }),
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "transcript-text", children: entry.text })
+            ] }, i);
+          })
+        ] })
+      ] });
+    }
     if (view === "transcript" && transcript) {
       return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "popup-container", children: [
         /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "popup-header", children: [
@@ -24745,14 +24887,24 @@
                 m.duration_seconds != null && ` \xB7 ${formatDuration(m.duration_seconds)}`
               ] })
             ] }),
-            m.transcript_available && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-              "button",
-              {
-                className: "btn btn-secondary btn-sm",
-                onClick: () => handleShowTranscript(m.meeting_session_id),
-                children: "\u{1F4C4} Transcript"
-              }
-            )
+            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "history-buttons", children: [
+              m.transcript_available && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+                "button",
+                {
+                  className: "btn btn-secondary btn-sm",
+                  onClick: () => handleShowTranscript(m.meeting_session_id),
+                  children: "\u{1F4C4} Transcript"
+                }
+              ),
+              m.report_available && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+                "button",
+                {
+                  className: "btn btn-secondary btn-sm",
+                  onClick: () => handleShowReport(m.meeting_session_id),
+                  children: "\u{1F4CA} Report"
+                }
+              )
+            ] })
           ] }, m.meeting_session_id))
         ] })
       ] });
