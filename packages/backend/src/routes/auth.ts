@@ -24,22 +24,49 @@ authRouter.post('/session', async (req: Request, res: Response) => {
     let displayName: string;
 
     try {
-      // Verify token with Google
+      // Use Google userinfo endpoint — works reliably with OAuth access tokens from chrome.identity
+      const userInfoUrl = `https://www.googleapis.com/oauth2/v3/userinfo`;
       const tokenInfoUrl = `https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=${google_id_token}`;
-      const fetch = (await import("node-fetch")).default;
-      const tokenRes = await fetch(tokenInfoUrl);
-      if (!tokenRes.ok) {
-        res.status(401).json({ error: "Invalid Google token", code: "AUTH_INVALID_TOKEN" });
+
+      // Try userinfo first (needs Bearer header), fall back to tokeninfo
+      let googleSubjectIdLocal: string | undefined;
+      let emailLocal: string | undefined;
+      let displayNameLocal: string | undefined;
+
+      const userInfoRes = await fetch(userInfoUrl, {
+        headers: { Authorization: `Bearer ${google_id_token}` }
+      });
+
+      if (userInfoRes.ok) {
+        const userInfo = await userInfoRes.json() as any;
+        googleSubjectIdLocal = userInfo.sub;
+        emailLocal = userInfo.email;
+        displayNameLocal = userInfo.name;
+        console.log('[AUTH] Verified via userinfo endpoint, sub:', googleSubjectIdLocal);
+      } else {
+        // Fall back to tokeninfo
+        const tokenInfoRes = await fetch(tokenInfoUrl);
+        if (!tokenInfoRes.ok) {
+          const body = await tokenInfoRes.text();
+          console.error('[AUTH] tokeninfo failed:', tokenInfoRes.status, body);
+          res.status(401).json({ error: "Invalid Google token", code: "AUTH_INVALID_TOKEN" });
+          return;
+        }
+        const tokenInfo = await tokenInfoRes.json() as any;
+        googleSubjectIdLocal = tokenInfo.sub;
+        emailLocal = tokenInfo.email;
+        displayNameLocal = tokenInfo.name;
+        console.log('[AUTH] Verified via tokeninfo endpoint, sub:', googleSubjectIdLocal);
+      }
+
+      if (!googleSubjectIdLocal) {
+        res.status(401).json({ error: "Could not extract user identity from token", code: "AUTH_INVALID_TOKEN" });
         return;
       }
-      const tokenInfo = await tokenRes.json() as any;
-      if (!tokenInfo.sub) {
-        res.status(401).json({ error: "Invalid Google token", code: "AUTH_INVALID_TOKEN" });
-        return;
-      }
-      googleSubjectId = tokenInfo.sub;
-      email = tokenInfo.email || `user-${tokenInfo.sub.slice(0, 8)}@gleameet.dev`;
-      displayName = tokenInfo.name || `User ${tokenInfo.sub.slice(0, 8)}`;
+
+      googleSubjectId = googleSubjectIdLocal;
+      email = emailLocal || `user-${googleSubjectId.slice(0, 8)}@gleameet.dev`;
+      displayName = displayNameLocal || `User ${googleSubjectId.slice(0, 8)}`;
     } catch (err) {
       console.error("[AUTH] Token verification error:", err);
       res.status(500).json({ error: "Token verification failed", code: "AUTH_ERROR" });
