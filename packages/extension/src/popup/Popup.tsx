@@ -183,10 +183,18 @@ export const Popup: React.FC = () => {
     chrome.runtime.sendMessage({ type: 'UNMUTE_COACHING' });
   };
 
+  const ensureToken = (): Promise<void> => new Promise(resolve => {
+    chrome.storage.local.get(['sessionToken'], (items) => {
+      if (items.sessionToken) setSessionToken(items.sessionToken);
+      resolve();
+    });
+  });
+
   const handleShowHistory = async () => {
     setLoading(true);
     setError(null);
     try {
+      await ensureToken();
       const data = await getHistory();
       setMeetings(data.meetings);
       setView('history');
@@ -201,6 +209,7 @@ export const Popup: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
+      await ensureToken();
       const data = await getTranscript(meetingSessionId);
       setTranscript(data);
       setView('transcript');
@@ -215,6 +224,7 @@ export const Popup: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
+      await ensureToken();
       const data = await getReport(meetingSessionId);
       setReport(data);
       setReportTab('summary');

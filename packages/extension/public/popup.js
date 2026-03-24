@@ -24672,10 +24672,17 @@
     const handleUnmute = () => {
       chrome.runtime.sendMessage({ type: "UNMUTE_COACHING" });
     };
+    const ensureToken = () => new Promise((resolve) => {
+      chrome.storage.local.get(["sessionToken"], (items) => {
+        if (items.sessionToken) setSessionToken(items.sessionToken);
+        resolve();
+      });
+    });
     const handleShowHistory = async () => {
       setLoading(true);
       setError(null);
       try {
+        await ensureToken();
         const data = await getHistory();
         setMeetings(data.meetings);
         setView("history");
@@ -24689,6 +24696,7 @@
       setLoading(true);
       setError(null);
       try {
+        await ensureToken();
         const data = await getTranscript(meetingSessionId);
         setTranscript(data);
         setView("transcript");
@@ -24702,6 +24710,7 @@
       setLoading(true);
       setError(null);
       try {
+        await ensureToken();
         const data = await getReport(meetingSessionId);
         setReport(data);
         setReportTab("summary");
