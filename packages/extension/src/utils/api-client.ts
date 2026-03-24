@@ -35,13 +35,29 @@ function getHeaders(): HeadersInit {
   return headers;
 }
 
-async function apiRequest<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function refreshSessionIfNeeded(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof chrome === 'undefined' || !chrome.identity) { resolve(); return; }
+    chrome.identity.getAuthToken({ interactive: false }, (token) => {
+      if (!token || chrome.runtime.lastError) { resolve(); return; }
+      createSession(token).then(() => resolve()).catch(() => resolve());
+    });
+  });
+}
+
+async function apiRequest<T>(method: string, path: string, body?: unknown, retry = true): Promise<T> {
   const apiBase = await getApiBase();
   const response = await fetch(`${apiBase}${path}`, {
     method,
     headers: getHeaders(),
     body: body ? JSON.stringify(body) : undefined,
   });
+
+  // Auto-reauth on 401 — session token expired or Redis restarted
+  if (response.status === 401 && retry) {
+    await refreshSessionIfNeeded();
+    return apiRequest<T>(method, path, body, false);
+  }
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Unknown error' }));

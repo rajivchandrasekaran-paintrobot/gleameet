@@ -19,13 +19,32 @@ function getHeaders() {
   }
   return headers;
 }
-async function apiRequest(method, path, body) {
+async function refreshSessionIfNeeded() {
+  return new Promise((resolve) => {
+    if (typeof chrome === "undefined" || !chrome.identity) {
+      resolve();
+      return;
+    }
+    chrome.identity.getAuthToken({ interactive: false }, (token) => {
+      if (!token || chrome.runtime.lastError) {
+        resolve();
+        return;
+      }
+      createSession(token).then(() => resolve()).catch(() => resolve());
+    });
+  });
+}
+async function apiRequest(method, path, body, retry = true) {
   const apiBase = await getApiBase();
   const response = await fetch(`${apiBase}${path}`, {
     method,
     headers: getHeaders(),
     body: body ? JSON.stringify(body) : void 0
   });
+  if (response.status === 401 && retry) {
+    await refreshSessionIfNeeded();
+    return apiRequest(method, path, body, false);
+  }
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: "Unknown error" }));
     throw new Error(error.error || `API error: ${response.status}`);
