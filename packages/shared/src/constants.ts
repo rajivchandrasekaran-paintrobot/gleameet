@@ -2,9 +2,9 @@ import { CoachingIntensity } from './models';
 
 /** Maximum prompt rates per 30 minutes by intensity (FR-047/FR-048) */
 export const MAX_PROMPTS_PER_30_MIN: Record<CoachingIntensity, number> = {
-  'minimal': 10,
-  'standard': 20,
-  'high-support': 40,
+  'minimal': 15,
+  'standard': 60,   // ~1 per 30s over a 30-min meeting
+  'high-support': 120,
 };
 
 /** Rolling window durations in seconds (FR-028) */

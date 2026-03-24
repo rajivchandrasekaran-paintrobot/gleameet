@@ -75,7 +75,7 @@ export async function rankAndSelectPrompt(
     const estimatedUsefulness = trigger.trigger_confidence * 0.8;
 
     // Fatigue penalty: increases with more prompts shown
-    const fatiguePenalty = state.prompts_shown_count * 0.05;
+    const fatiguePenalty = state.prompts_shown_count * 0.01; // Reduced — was cutting off nudges too early
 
     const score =
       (trigger.trigger_confidence * RANKING_WEIGHTS.TRIGGER_CONFIDENCE) +
