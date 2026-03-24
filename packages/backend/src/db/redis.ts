@@ -68,6 +68,7 @@ export interface MeetingState {
   user_is_speaking: boolean;
   prompts_shown_count: number;
   last_prompt_shown_at: string | null;
+  last_reinforcement_behavior_count: number; // Tracks positive behaviors since last reinforcement
   events_ingested: number;
   // Linguistic classifier accumulators
   hedging_hits: number;
@@ -111,6 +112,7 @@ export async function initMeetingState(sessionId: string, userId: string): Promi
     user_is_speaking: false,
     prompts_shown_count: 0,
     last_prompt_shown_at: null,
+    last_reinforcement_behavior_count: 0,
     events_ingested: 0,
     hedging_hits: 0,
     certainty_hits: 0,

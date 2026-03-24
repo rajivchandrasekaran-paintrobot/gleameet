@@ -185,7 +185,7 @@ export interface LawTrigger {
 }
 
 // PromptEvent entity
-export type PromptType = 'pause' | 'acknowledge' | 'ask' | 'frame' | 'close';
+export type PromptType = 'pause' | 'acknowledge' | 'ask' | 'frame' | 'close' | 'reinforce';
 export type DisplayState = 'pending' | 'shown' | 'dismissed' | 'expired' | 'muted';
 
 export interface PromptEvent {

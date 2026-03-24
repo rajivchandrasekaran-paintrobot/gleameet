@@ -28,6 +28,10 @@ export async function rankAndSelectPrompt(
   triggers: LawTrigger[],
   state: MeetingState
 ): Promise<PromptEvent | null> {
+  // Check for positive reinforcement opportunity first (every ~5 good behaviors)
+  const reinforcementPrompt = await maybeGenerateReinforcement(meetingSessionId, state);
+  if (reinforcementPrompt) return reinforcementPrompt;
+
   if (triggers.length === 0) return null;
 
   // Check session status (muted sessions don't get prompts)
@@ -244,5 +248,113 @@ Respond in exactly this JSON format (no markdown):
   } catch (err: any) {
     console.warn(`[INTERVENTION] LLM nudge generation failed, using template: ${err.message}`);
     return fallback;
+  }
+}
+
+/**
+ * Check if the speaker has done something worth reinforcing.
+ * Fires at most once per 5 new positive behaviors, with global cooldown respected.
+ */
+async function maybeGenerateReinforcement(
+  meetingSessionId: string,
+  state: MeetingState
+): Promise<PromptEvent | null> {
+  try {
+    // Compute total positive behaviors so far
+    const positiveBehaviorCount =
+      state.question_count +
+      state.acknowledgment_count +
+      state.summary_or_recap_count +
+      (state.owner_assignment_present ? 1 : 0) +
+      (state.deadline_present ? 1 : 0) +
+      (state.evidence_reference_present ? 1 : 0) +
+      (state.shared_goal_language_present ? 1 : 0);
+
+    // Fire reinforcement every 5 new positive behaviors
+    const newBehaviors = positiveBehaviorCount - state.last_reinforcement_behavior_count;
+    if (newBehaviors < 5) return null;
+
+    // Respect global cooldown
+    const globalCooldown = await isGlobalCooldownActive(meetingSessionId);
+    if (globalCooldown) return null;
+
+    // Don't reinforce if not active
+    if (state.status !== 'active') return null;
+
+    // Identify the most recent positive thing they did
+    const recentTranscript = (state.recent_transcript || []).slice(-5)
+      .map(t => `${t.speaker === 'user' ? 'You' : 'Other'}: ${t.text}`)
+      .join('\n');
+
+    const positiveContext = [
+      state.question_count > 0 ? `asked ${state.question_count} question(s)` : null,
+      state.acknowledgment_count > 0 ? `acknowledged others ${state.acknowledgment_count} time(s)` : null,
+      state.summary_or_recap_count > 0 ? `summarized/recapped ${state.summary_or_recap_count} time(s)` : null,
+      state.evidence_reference_present ? 'referenced evidence or data' : null,
+      state.shared_goal_language_present ? 'used shared goal language' : null,
+    ].filter(Boolean).join(', ');
+
+    const prompt = `You are a real-time meeting coach giving positive reinforcement.
+
+The speaker has done something well: ${positiveContext}
+
+Recent conversation:
+${recentTranscript || '(no transcript yet)'}
+
+Generate a brief, qualified compliment that:
+- Acknowledges a SPECIFIC positive behavior you can see in the data or transcript
+- Uses a qualified statement (not over-the-top praise) — e.g. "Good instinct to summarize there" or "Asking that question helped clarify the goal"
+- Is 10-20 words
+- Feels natural and coach-like, not sycophantic
+
+Also write a short rationale (max 15 words) explaining what specific behavior triggered this.
+
+Respond in exactly this JSON format (no markdown):
+{"short_text": "...", "rationale_text": "..."}`;
+
+    const client = buildLLMClient();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2000);
+
+    const response = await client.chat.completions.create(
+      { model: LLM_MODEL, messages: [{ role: 'user', content: prompt }], max_tokens: 150, temperature: 0.7 },
+      { signal: controller.signal }
+    );
+    clearTimeout(timeout);
+
+    const content_resp = response.choices?.[0]?.message?.content?.trim();
+    if (!content_resp) return null;
+
+    const parsed = JSON.parse(content_resp);
+    if (!parsed.short_text) return null;
+
+    // Update tracker
+    state.last_reinforcement_behavior_count = positiveBehaviorCount;
+
+    await setGlobalCooldown(meetingSessionId, 15);
+    await incrementPromptCount(meetingSessionId);
+    state.prompts_shown_count++;
+    state.last_prompt_shown_at = new Date().toISOString();
+
+    const promptEvent: PromptEvent = {
+      prompt_id: uuidv4(),
+      meeting_session_id: meetingSessionId,
+      law_id: 'REINFORCE',
+      prompt_type: 'reinforce' as PromptType,
+      short_text: parsed.short_text.slice(0, 120),
+      rationale_text: (parsed.rationale_text || '').slice(0, 150),
+      example_phrase: null,
+      shown_at: null,
+      expired_at: new Date(Date.now() + 30000).toISOString(),
+      display_state: 'pending',
+      dismissed_at: null,
+      confidence: 0.9,
+    };
+
+    console.log(`[INTERVENTION] Positive reinforcement fired: "${promptEvent.short_text}"`);
+    return promptEvent;
+  } catch (err: any) {
+    console.warn(`[INTERVENTION] Reinforcement generation failed: ${err.message}`);
+    return null;
   }
 }
