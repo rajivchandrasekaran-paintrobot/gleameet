@@ -24,52 +24,48 @@ authRouter.post('/session', async (req: Request, res: Response) => {
     let displayName: string;
 
     try {
-      // Use Google userinfo endpoint — works reliably with OAuth access tokens from chrome.identity
-      const userInfoUrl = `https://www.googleapis.com/oauth2/v3/userinfo`;
-      const tokenInfoUrl = `https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=${google_id_token}`;
+      const nodeFetch = (await import('node-fetch')).default;
+      const tokenPrefix = google_id_token.substring(0, 10);
+      console.log(`[AUTH] Verifying token (prefix: ${tokenPrefix}..., length: ${google_id_token.length})`);
 
-      // Try userinfo first (needs Bearer header), fall back to tokeninfo
-      let googleSubjectIdLocal: string | undefined;
-      let emailLocal: string | undefined;
-      let displayNameLocal: string | undefined;
-
-      const userInfoRes = await fetch(userInfoUrl, {
+      // Try userinfo endpoint first
+      const userInfoRes = await nodeFetch('https://www.googleapis.com/oauth2/v3/userinfo', {
         headers: { Authorization: `Bearer ${google_id_token}` }
       });
+      const userInfoBody = await userInfoRes.text();
+      console.log(`[AUTH] userinfo status: ${userInfoRes.status}, body: ${userInfoBody.slice(0, 200)}`);
 
-      if (userInfoRes.ok) {
-        const userInfo = await userInfoRes.json() as any;
-        googleSubjectIdLocal = userInfo.sub;
-        emailLocal = userInfo.email;
-        displayNameLocal = userInfo.name;
-        console.log('[AUTH] Verified via userinfo endpoint, sub:', googleSubjectIdLocal);
+      let parsed: any = {};
+      try { parsed = JSON.parse(userInfoBody); } catch (_) {}
+
+      if (userInfoRes.ok && parsed.sub) {
+        googleSubjectId = parsed.sub;
+        email = parsed.email || `user-${parsed.sub.slice(0, 8)}@gleameet.dev`;
+        displayName = parsed.name || email;
+        console.log(`[AUTH] Verified via userinfo: ${email}`);
       } else {
         // Fall back to tokeninfo
-        const tokenInfoRes = await fetch(tokenInfoUrl);
-        if (!tokenInfoRes.ok) {
-          const body = await tokenInfoRes.text();
-          console.error('[AUTH] tokeninfo failed:', tokenInfoRes.status, body);
-          res.status(401).json({ error: "Invalid Google token", code: "AUTH_INVALID_TOKEN" });
+        const tokenInfoRes = await nodeFetch(
+          `https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=${google_id_token}`
+        );
+        const tokenInfoBody = await tokenInfoRes.text();
+        console.log(`[AUTH] tokeninfo status: ${tokenInfoRes.status}, body: ${tokenInfoBody.slice(0, 200)}`);
+
+        let tokenParsed: any = {};
+        try { tokenParsed = JSON.parse(tokenInfoBody); } catch (_) {}
+
+        if (!tokenInfoRes.ok || !tokenParsed.sub) {
+          res.status(401).json({ error: `Invalid Google token (userinfo: ${userInfoRes.status}, tokeninfo: ${tokenInfoRes.status})`, code: 'AUTH_INVALID_TOKEN' });
           return;
         }
-        const tokenInfo = await tokenInfoRes.json() as any;
-        googleSubjectIdLocal = tokenInfo.sub;
-        emailLocal = tokenInfo.email;
-        displayNameLocal = tokenInfo.name;
-        console.log('[AUTH] Verified via tokeninfo endpoint, sub:', googleSubjectIdLocal);
+        googleSubjectId = tokenParsed.sub;
+        email = tokenParsed.email || `user-${tokenParsed.sub.slice(0, 8)}@gleameet.dev`;
+        displayName = tokenParsed.name || email;
+        console.log(`[AUTH] Verified via tokeninfo: ${email}`);
       }
-
-      if (!googleSubjectIdLocal) {
-        res.status(401).json({ error: "Could not extract user identity from token", code: "AUTH_INVALID_TOKEN" });
-        return;
-      }
-
-      googleSubjectId = googleSubjectIdLocal;
-      email = emailLocal || `user-${googleSubjectId.slice(0, 8)}@gleameet.dev`;
-      displayName = displayNameLocal || `User ${googleSubjectId.slice(0, 8)}`;
     } catch (err) {
-      console.error("[AUTH] Token verification error:", err);
-      res.status(500).json({ error: "Token verification failed", code: "AUTH_ERROR" });
+      console.error('[AUTH] Token verification error:', err);
+      res.status(500).json({ error: 'Token verification failed', code: 'AUTH_ERROR' });
       return;
     }
 
