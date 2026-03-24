@@ -307,23 +307,30 @@ function observeCaptions(): void {
 
     for (const el of seen) {
       const text = (el as HTMLElement).textContent?.trim();
-      if (text && text.length > 2 && !el.getAttribute('data-gleameet-captured')) {
-        el.setAttribute('data-gleameet-captured', '1');
+      if (!text || text.length < 5 || el.getAttribute('data-gleameet-captured')) continue;
 
-        // Determine speaker — self if in a self-labeled container
-        const isSelf = !!el.closest('[data-self-name]') ||
-                       !!el.closest('[data-is-self="true"]') ||
-                       !!el.closest('[aria-label*="You"]');
-        const speaker = isSelf ? 'user' : 'other';
+      // Filter out Meet UI noise — single words that are color names, settings labels, etc.
+      const NOISE_PATTERNS = /^(yellow|cyan|magenta|red|green|blue|white|black|settings|open|close|more|mute|unmute|camera|mic|chat|participants|present|captions?|live|on|off|you|ok|yes|no)$/i;
+      const wordCount = text.split(/\s+/).length;
+      if (wordCount <= 2 && NOISE_PATTERNS.test(text.replace(/\s+/g, ' ').trim())) continue;
 
-        console.log(`[GleaMeet] Caption captured (${speaker}): ${text.slice(0, 60)}`);
-        emitEvent('transcript_segment', {
-          text,
-          speaker,
-          start_offset_ms: Date.now(),
-          end_offset_ms: Date.now(),
-        }, 0.6);
-      }
+      // Must look like actual speech — at least 4 words or contains sentence punctuation
+      if (wordCount < 4 && !/[.!?,]/.test(text)) continue;
+
+      el.setAttribute('data-gleameet-captured', '1');
+
+      const isSelf = !!el.closest('[data-self-name]') ||
+                     !!el.closest('[data-is-self="true"]') ||
+                     !!el.closest('[aria-label*="You"]');
+      const speaker = isSelf ? 'user' : 'other';
+
+      console.log(`[GleaMeet] Caption captured (${speaker}): ${text.slice(0, 60)}`);
+      emitEvent('transcript_segment', {
+        text,
+        speaker,
+        start_offset_ms: Date.now(),
+        end_offset_ms: Date.now(),
+      }, 0.6);
     }
   });
 
