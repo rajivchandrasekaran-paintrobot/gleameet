@@ -102,6 +102,33 @@ export async function getReport(meetingSessionId: string): Promise<ReportRespons
   return apiRequest<ReportResponse>('GET', `/reports/${meetingSessionId}`);
 }
 
+/** POST /audio/transcribe — Send audio chunk for Whisper transcription */
+export async function transcribeAudio(blob: Blob, stream: 'mic' | 'tab', meetingSessionId: string): Promise<{ text: string; stream: string }> {
+  const apiBase = await getApiBase();
+  const formData = new FormData();
+  formData.append('audio', blob, 'chunk.webm');
+  formData.append('stream', stream);
+  formData.append('meeting_session_id', meetingSessionId);
+
+  const headers: HeadersInit = {};
+  if (sessionToken) {
+    headers['Authorization'] = `Bearer ${sessionToken}`;
+  }
+
+  const response = await fetch(`${apiBase}/audio/transcribe`, {
+    method: 'POST',
+    headers,
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+    throw new Error(error.error || `API error: ${response.status}`);
+  }
+
+  return response.json();
+}
+
 /** Set the session token (e.g., from storage) */
 export function setSessionToken(token: string): void {
   sessionToken = token;

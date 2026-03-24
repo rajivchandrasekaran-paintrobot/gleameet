@@ -258,7 +258,7 @@
           speaker,
           start_offset_ms: Date.now(),
           end_offset_ms: Date.now()
-        }, 0.6);
+        }, 0.3);
       }
     });
     state.captionObserver.observe(document.body, {

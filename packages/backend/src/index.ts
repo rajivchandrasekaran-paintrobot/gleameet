@@ -10,6 +10,7 @@ import { reportsRouter } from './routes/reports';
 import { historyRouter } from './routes/history';
 import { registryRouter } from './routes/registry';
 import { userRouter } from './routes/user';
+import { audioRouter } from './routes/audio';
 import { errorHandler } from './middleware/error-handler';
 import { requestLogger } from './middleware/request-logger';
 import { authMiddleware } from './middleware/auth';
@@ -57,6 +58,7 @@ app.use('/reports', authMiddleware, reportsRouter);
 app.use('/history', authMiddleware, historyRouter);
 app.use('/registry', authMiddleware, registryRouter);
 app.use('/user', authMiddleware, userRouter);
+app.use('/audio', authMiddleware, audioRouter);
 
 // Health check with dependency status
 app.get('/health', async (_req, res) => {
