@@ -201,7 +201,7 @@ async function generatePersonalizedNudge(
 
     const prompt = `You are a real-time meeting coach. Rewrite the nudge below so it feels personal and in-the-moment.
 
-Behavioral law: ${law.name} — ${law.description}
+Behavioral law: ${law.law_name} — ${law.description}
 Trigger confidence: ${trigger.trigger_confidence}
 Feature snapshot: ${featureSnapshot}
 
