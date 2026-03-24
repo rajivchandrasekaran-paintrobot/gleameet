@@ -24618,24 +24618,34 @@
       return () => chrome.runtime.onMessage.removeListener(listener);
     }, []);
     const handleSignIn = () => {
-      chrome.identity.getAuthToken({ interactive: true }, (token) => {
-        if (chrome.runtime.lastError || !token) {
-          console.error("[GleaMeet] OAuth error:", chrome.runtime.lastError?.message);
-          setState((prev) => ({ ...prev, status: "error" }));
-          return;
+      chrome.identity.getAuthToken({ interactive: false }, (cachedToken) => {
+        const doAuth = () => {
+          chrome.identity.getAuthToken({ interactive: true }, (token) => {
+            if (chrome.runtime.lastError || !token) {
+              console.error("[GleaMeet] OAuth error:", chrome.runtime.lastError?.message);
+              setError(chrome.runtime.lastError?.message || "OAuth failed");
+              setState((prev) => ({ ...prev, status: "error" }));
+              return;
+            }
+            chrome.runtime.sendMessage({
+              type: "AUTHENTICATE",
+              googleIdToken: token
+            }, (response) => {
+              if (response?.ok) {
+                setState((prev) => ({ ...prev, authenticated: true, userId: response.userId, status: "ready" }));
+              } else {
+                console.error("[GleaMeet] Auth response error:", response?.error);
+                setError(response?.error || "Sign in failed");
+                setState((prev) => ({ ...prev, status: "error" }));
+              }
+            });
+          });
+        };
+        if (cachedToken) {
+          chrome.identity.removeCachedAuthToken({ token: cachedToken }, doAuth);
+        } else {
+          doAuth();
         }
-        chrome.runtime.sendMessage({
-          type: "AUTHENTICATE",
-          googleIdToken: token
-        }, (response) => {
-          if (response?.ok) {
-            setState((prev) => ({ ...prev, authenticated: true, userId: response.userId, status: "ready" }));
-          } else {
-            console.error("[GleaMeet] Auth response error:", response?.error);
-            setError(response?.error || "Sign in failed");
-            setState((prev) => ({ ...prev, status: "error" }));
-          }
-        });
       });
     };
     const handleStartCoaching = () => {
