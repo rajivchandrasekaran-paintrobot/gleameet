@@ -207,15 +207,12 @@ ${transcriptBlock}
 Template nudge: "${templateText}"
 
 Rules:
-- Output ONE sentence, up to 25 words if needed for context
-- Reference something specific from the conversation (a word they used, a pattern)
-- Make it actionable, not generic
-- Do NOT use quotes around the sentence
+- short_text: ONE actionable sentence, up to 25 words. Reference something specific from the conversation.
+- rationale_text: ONE sentence explaining exactly WHY this nudge is being given — cite the specific behavior observed (e.g. "You've used hedging phrases 3 times in the last 2 minutes" or "You interrupted before they finished their point"). Up to 20 words. Be specific, not generic.
+- Do NOT use quotes inside the strings.
 
 Respond in exactly this JSON format (no markdown):
-{"short_text": "...", "rationale_text": "..."}
-
-rationale_text should explain WHY in max 10 words.`;
+{"short_text": "...", "rationale_text": "..."}`;
 
     const client = buildLLMClient();
     const controller = new AbortController();
@@ -225,7 +222,7 @@ rationale_text should explain WHY in max 10 words.`;
       {
         model: LLM_MODEL,
         messages: [{ role: 'user', content: prompt }],
-        max_tokens: 150,
+        max_tokens: 200,
         temperature: 0.7,
       },
       { signal: controller.signal }
@@ -240,7 +237,7 @@ rationale_text should explain WHY in max 10 words.`;
     if (parsed.short_text && typeof parsed.short_text === 'string') {
       return {
         short_text: parsed.short_text.slice(0, 100),
-        rationale_text: (parsed.rationale_text || '').slice(0, 80),
+        rationale_text: (parsed.rationale_text || '').slice(0, 150),
       };
     }
     return fallback;
