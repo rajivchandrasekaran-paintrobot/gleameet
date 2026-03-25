@@ -201,6 +201,7 @@ async function generatePersonalizedNudge(
       : '{}';
 
     const prompt = `You are a real-time meeting coach. Rewrite the nudge below so it feels personal and in-the-moment.
+You are coaching ONLY the [user] speaker. Other participants ([other]) appear for context only — NEVER coach, critique, or reference their behavior.
 
 Behavioral law: ${law.law_name} — ${law.description}
 Trigger confidence: ${trigger.trigger_confidence}
@@ -212,9 +213,10 @@ ${transcriptBlock}
 Template nudge: "${templateText}"
 
 Rules:
-- short_text: ONE actionable sentence, up to 25 words. Reference something specific from the conversation.
-- rationale_text: ONE sentence explaining exactly WHY this nudge is being given — cite the specific behavior observed (e.g. "You've used hedging phrases 3 times in the last 2 minutes" or "You interrupted before they finished their point"). Up to 20 words. Be specific, not generic.
+- short_text: ONE actionable sentence, up to 25 words. Reference something specific from the [user]'s own words or behavior.
+- rationale_text: ONE sentence explaining exactly WHY this nudge is being given — cite the [user]'s specific behavior observed (e.g. "You've used hedging phrases 3 times in the last 2 minutes" or "You interrupted before they finished their point"). Up to 20 words. Be specific, not generic.
 - Do NOT use quotes inside the strings.
+- Address the user as "you" — never mention other participants by name or role.
 
 Respond in exactly this JSON format (no markdown):
 {"short_text": "...", "rationale_text": "..."}`;
@@ -296,19 +298,21 @@ async function maybeGenerateReinforcement(
     ].filter(Boolean).join(', ');
 
     const prompt = `You are a real-time meeting coach giving positive reinforcement.
+You are coaching ONLY the user ("You" in the transcript). Other participants appear for context only — NEVER praise or reference their behavior.
 
-The speaker has done something well: ${positiveContext}
+The user has done something well: ${positiveContext}
 
 Recent conversation:
 ${recentTranscript || '(no transcript yet)'}
 
 Generate a brief, qualified compliment that:
-- Acknowledges a SPECIFIC positive behavior you can see in the data or transcript
+- Acknowledges a SPECIFIC positive behavior by the user (labeled "You") in the data or transcript
 - Uses a qualified statement (not over-the-top praise) — e.g. "Good instinct to summarize there" or "Asking that question helped clarify the goal"
 - Is 10-20 words
 - Feels natural and coach-like, not sycophantic
+- Never mentions other participants by name or role
 
-Also write a short rationale (max 15 words) explaining what specific behavior triggered this.
+Also write a short rationale (max 15 words) explaining what specific user behavior triggered this.
 
 Respond in exactly this JSON format (no markdown):
 {"short_text": "...", "rationale_text": "..."}`;

@@ -234,6 +234,7 @@ export async function generateReport(
       }).join('\n');
 
     const analysisPrompt = `You are a behavioral science meeting coach. Write a post-call analysis paragraph (150-200 words) based on the data below.
+You are coaching ONLY the person labeled [user] in the transcript. Other participants appear for context only — do NOT analyze or critique their behavior.
 
 Meeting duration: ${Math.round(durationSeconds / 60)} minutes
 Prompts shown: ${state.prompts_shown_count}
@@ -245,11 +246,12 @@ Transcript sample (with coach nudges/praise interleaved):
 ${transcriptSample || '(no transcript)'}
 
 Write a flowing narrative analysis that:
-- Summarizes how the conversation went behaviorally
-- Highlights specific moments where patterns were observed
-- References the nudges and whether they aligned with what was happening
-- Ends with 1-2 forward-looking behavioral suggestions
+- Summarizes how the [user]'s conversation went behaviorally — focus exclusively on the user's actions
+- Highlights specific moments where the user's patterns were observed
+- References the nudges and whether they aligned with what the user was doing
+- Ends with 1-2 forward-looking behavioral suggestions for the user
 - Is specific, not generic — reference actual content from the transcript
+- Never critiques or coaches other participants
 
 Write ONLY the analysis paragraph, no headers.`;
 
@@ -317,7 +319,7 @@ async function generateInterpretiveContentViaLLM(
   const totalMs = state.speaking_time_total_ms + state.other_speaking_time_total_ms;
   const sharePercent = totalMs > 0 ? Math.round((state.speaking_time_total_ms / totalMs) * 100) : 0;
 
-  const prompt = `You are a meeting coach AI. Analyze the following meeting behavioral data and generate personalized feedback.
+  const prompt = `You are a meeting coach AI. Analyze the following meeting behavioral data and generate personalized feedback for the user only. All data below reflects the user's behavior — do NOT coach or critique other participants.
 
 ## Meeting Data
 - Duration: ${Math.round(durationSeconds)} seconds
