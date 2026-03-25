@@ -12,6 +12,32 @@ const whisperClient = new OpenAI({
 
 export const audioRouter = Router();
 
+/** Filter out likely noise/garbage transcriptions from Whisper */
+function isValidTranscript(text: string, stream: string): boolean {
+  if (!text || text.trim().length < 3) return false;
+
+  const trimmed = text.trim();
+
+  // Too short after trimming
+  if (trimmed.split(/\s+/).length < 2) return false;
+
+  // Whisper common noise outputs to reject
+  const noisePatterns = [
+    /^(thank you|thanks|\.+|…+)\.?$/i,
+    /^\[.*\]$/, // [Music] [Applause] etc
+    /^♪.*♪$/,  // music notation
+    /^\(.*\)$/, // (laughing) etc — if entire transcript
+  ];
+  if (noisePatterns.some(p => p.test(trimmed))) return false;
+
+  // Check for high ratio of non-ASCII characters (garbled output)
+  const nonAscii = (trimmed.match(/[^\x00-\x7F]/g) || []).length;
+  const ratio = nonAscii / trimmed.length;
+  if (ratio > 0.3) return false; // More than 30% non-ASCII = likely noise
+
+  return true;
+}
+
 /**
  * POST /audio/transcribe
  * Accepts multipart form: audio file (WebM/WAV) + stream ("mic"|"tab") + meeting_session_id
@@ -44,8 +70,14 @@ audioRouter.post('/transcribe', upload.single('audio'), async (req, res) => {
     const transcription = await whisperClient.audio.transcriptions.create({
       file: audioFile,
       model: 'whisper-1',
+      language: 'en',
       response_format: 'json',
     });
+
+    // Filter out noise/garbage transcriptions
+    if (!isValidTranscript(transcription.text, stream)) {
+      return res.json({ text: '', stream });
+    }
 
     return res.json({
       text: transcription.text,

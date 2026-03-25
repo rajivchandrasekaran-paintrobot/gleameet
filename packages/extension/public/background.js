@@ -190,7 +190,7 @@ async function handleStartCoaching(message) {
     state.eventBuffer = [];
     state.batchInterval = setInterval(flushEventBuffer, 3e3);
     state.pollingInterval = setInterval(pollForPrompts, 2e3);
-    chrome.tabs.query({ url: "https://meet.google.com/*" }, (tabs) => {
+    chrome.tabs.query({ url: ["https://meet.google.com/*", "https://teams.microsoft.com/*", "https://teams.live.com/*", "https://zoom.us/wc/*", "https://app.zoom.us/wc/*"] }, (tabs) => {
       for (const tab of tabs) {
         if (tab.id) {
           chrome.tabs.sendMessage(tab.id, {
@@ -199,6 +199,7 @@ async function handleStartCoaching(message) {
             userId: state.userId
           }).catch(() => {
           });
+          startTabCapture(tab.id, response.meeting_session_id);
         }
       }
     });
@@ -284,6 +285,33 @@ async function handleAckPrompt(message) {
     console.error("[GleaMeet] Prompt ack failed:", err);
     return { error: err.message };
   }
+}
+function startTabCapture(tabId, meetingSessionId) {
+  chrome.tabCapture.getMediaStreamId({ targetTabId: tabId }, (streamId) => {
+    if (chrome.runtime.lastError || !streamId) {
+      console.error("[GleaMeet] tabCapture.getMediaStreamId failed:", chrome.runtime.lastError?.message);
+      return;
+    }
+    const sendCaptureMessage = () => {
+      chrome.runtime.sendMessage({
+        type: "START_TAB_CAPTURE",
+        streamId,
+        meetingSessionId,
+        sessionToken: getSessionToken(),
+        apiBase: "https://gleameet.onrender.com"
+      }).catch(() => {
+      });
+    };
+    chrome.offscreen.createDocument({
+      url: "offscreen.html",
+      reasons: ["USER_MEDIA"],
+      justification: "Tab audio capture for meeting transcription"
+    }).then(() => {
+      sendCaptureMessage();
+    }).catch(() => {
+      sendCaptureMessage();
+    });
+  });
 }
 function broadcastStatus() {
   chrome.runtime.sendMessage({

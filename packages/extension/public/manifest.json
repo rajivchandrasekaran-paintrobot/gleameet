@@ -9,7 +9,8 @@
         "tabCapture",
         "storage",
         "alarms",
-        "identity"
+        "identity",
+        "offscreen"
     ],
     "oauth2": {
         "client_id": "783981911702-fnhs6kad6qjk4j2vpkve0g75b7f4ibjt.apps.googleusercontent.com",

@@ -15,7 +15,7 @@
     "typescript": "^5.3.3"
   },
   "scripts": {
-    "build": "npx esbuild src/background/service-worker.ts --bundle --outfile=public/background.js --format=esm --platform=browser && npx esbuild src/content/content-script.ts --bundle --outfile=public/content.js --format=iife --platform=browser && npx esbuild src/popup/index.tsx --bundle --outfile=public/popup.js --format=iife --platform=browser",
+    "build": "npx esbuild src/background/service-worker.ts --bundle --outfile=public/background.js --format=esm --platform=browser && npx esbuild src/content/content-script.ts --bundle --outfile=public/content.js --format=iife --platform=browser && npx esbuild src/popup/index.tsx --bundle --outfile=public/popup.js --format=iife --platform=browser && npx esbuild src/offscreen.ts --bundle --outfile=public/offscreen.js --format=iife --platform=browser",
     "dev": "npx esbuild src/background/service-worker.ts --bundle --outfile=public/background.js --format=esm --platform=browser --watch & npx esbuild src/content/content-script.ts --bundle --outfile=public/content.js --format=iife --platform=browser --watch & npx esbuild src/popup/index.tsx --bundle --outfile=public/popup.js --format=iife --platform=browser --watch"
   }
 }

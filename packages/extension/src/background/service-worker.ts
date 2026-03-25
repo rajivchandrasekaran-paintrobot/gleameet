@@ -159,7 +159,7 @@ async function handleStartCoaching(message: any): Promise<any> {
     state.pollingInterval = setInterval(pollForPrompts, 2000);
 
     // Notify content script that coaching has started (audio capture runs there)
-    chrome.tabs.query({ url: 'https://meet.google.com/*' }, (tabs) => {
+    chrome.tabs.query({ url: ['https://meet.google.com/*', 'https://teams.microsoft.com/*', 'https://teams.live.com/*', 'https://zoom.us/wc/*', 'https://app.zoom.us/wc/*'] }, (tabs) => {
       for (const tab of tabs) {
         if (tab.id) {
           chrome.tabs.sendMessage(tab.id, {
@@ -167,6 +167,9 @@ async function handleStartCoaching(message: any): Promise<any> {
             meetingSessionId: response.meeting_session_id,
             userId: state.userId,
           }).catch(() => {});
+
+          // Start tab audio capture via offscreen document
+          startTabCapture(tab.id, response.meeting_session_id);
         }
       }
     });
@@ -275,6 +278,37 @@ async function handleAckPrompt(message: any): Promise<any> {
     console.error('[GleaMeet] Prompt ack failed:', err);
     return { error: err.message };
   }
+}
+
+/** Start tab audio capture via offscreen document */
+function startTabCapture(tabId: number, meetingSessionId: string): void {
+  (chrome.tabCapture as any).getMediaStreamId({ targetTabId: tabId }, (streamId: string) => {
+    if (chrome.runtime.lastError || !streamId) {
+      console.error('[GleaMeet] tabCapture.getMediaStreamId failed:', chrome.runtime.lastError?.message);
+      return;
+    }
+
+    const sendCaptureMessage = () => {
+      chrome.runtime.sendMessage({
+        type: 'START_TAB_CAPTURE',
+        streamId,
+        meetingSessionId,
+        sessionToken: getSessionToken(),
+        apiBase: 'https://gleameet.onrender.com',
+      }).catch(() => {});
+    };
+
+    (chrome.offscreen as any).createDocument({
+      url: 'offscreen.html',
+      reasons: ['USER_MEDIA'],
+      justification: 'Tab audio capture for meeting transcription',
+    }).then(() => {
+      sendCaptureMessage();
+    }).catch(() => {
+      // Offscreen document already exists
+      sendCaptureMessage();
+    });
+  });
 }
 
 /** Broadcast session status to all extension tabs */
