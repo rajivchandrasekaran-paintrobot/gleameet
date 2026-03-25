@@ -72,7 +72,10 @@
       return hasVideo || hasLeaveBtn;
     }
     if (url.includes("teams.microsoft.com") || url.includes("teams.live.com")) {
-      return !!document.querySelector('[data-tid="calling-screen"]') || !!document.querySelector('[data-tid="hangup-btn"]') || !!document.querySelector('button[aria-label*="Leave"]') || !!document.querySelector('button[aria-label*="leave"]') || !!document.querySelector("video");
+      const inCallUrl = url.includes("/callingv2") || url.includes("/meet/") || url.includes("/_#/callingv2") || url.includes("/calling");
+      if (inCallUrl) return true;
+      const hasCallUI = !!document.querySelector('[data-tid="calling-screen"]') || !!document.querySelector('[data-tid="hangup-btn"]') || !!document.querySelector('button[aria-label*="Leave"]') || !!document.querySelector('button[aria-label*="leave"]') || !!document.querySelector('[class*="calling"]') || !!document.querySelector('[id*="calling"]') || document.title.toLowerCase().includes("meeting") || document.title.toLowerCase().includes("call");
+      return hasCallUI || !!document.querySelector("video") && url.includes("teams");
     }
     if (url.includes("zoom.us/wc") || url.includes("app.zoom.us/wc")) {
       return !!document.querySelector(".meeting-app") || !!document.querySelector("#wc-container-right") || !!document.querySelector("video");
@@ -579,4 +582,19 @@
   }
   window.__gleameet_showConsent = showConsentDialog;
   startMeetingDetection();
+  var lastUrl = window.location.href;
+  setInterval(() => {
+    if (window.location.href !== lastUrl) {
+      lastUrl = window.location.href;
+      const inMeeting = detectMeeting();
+      if (inMeeting && !state.meetingDetected) {
+        onMeetingDetected();
+      } else if (!inMeeting && state.meetingDetected && !meetingEndDebounceTimer) {
+        meetingEndDebounceTimer = setTimeout(() => {
+          meetingEndDebounceTimer = null;
+          if (!detectMeeting()) onMeetingEnded();
+        }, 3e3);
+      }
+    }
+  }, 1e3);
 })();

@@ -90,11 +90,26 @@ function detectMeeting(): boolean {
 
   // Microsoft Teams web
   if (url.includes('teams.microsoft.com') || url.includes('teams.live.com')) {
-    return !!document.querySelector('[data-tid="calling-screen"]') ||
-           !!document.querySelector('[data-tid="hangup-btn"]') ||
-           !!document.querySelector('button[aria-label*="Leave"]') ||
-           !!document.querySelector('button[aria-label*="leave"]') ||
-           !!document.querySelector('video');
+    // Check URL path for call indicators (hash/path changes when in a call)
+    const inCallUrl = url.includes('/callingv2') ||
+                      url.includes('/meet/') ||
+                      url.includes('/_#/callingv2') ||
+                      url.includes('/calling');
+
+    if (inCallUrl) return true;
+
+    // DOM checks (may be in iframes but try anyway)
+    const hasCallUI =
+      !!document.querySelector('[data-tid="calling-screen"]') ||
+      !!document.querySelector('[data-tid="hangup-btn"]') ||
+      !!document.querySelector('button[aria-label*="Leave"]') ||
+      !!document.querySelector('button[aria-label*="leave"]') ||
+      !!document.querySelector('[class*="calling"]') ||
+      !!document.querySelector('[id*="calling"]') ||
+      document.title.toLowerCase().includes('meeting') ||
+      document.title.toLowerCase().includes('call');
+
+    return hasCallUI || (!!document.querySelector('video') && url.includes('teams'));
   }
 
   // Zoom web client
@@ -814,3 +829,20 @@ function showConsentDialog(): Promise<boolean> {
 
 // --- Initialize ---
 startMeetingDetection();
+
+// Teams/Zoom use hash/pushState navigation — URL changes don't trigger page reload
+let lastUrl = window.location.href;
+setInterval(() => {
+  if (window.location.href !== lastUrl) {
+    lastUrl = window.location.href;
+    const inMeeting = detectMeeting();
+    if (inMeeting && !state.meetingDetected) {
+      onMeetingDetected();
+    } else if (!inMeeting && state.meetingDetected && !meetingEndDebounceTimer) {
+      meetingEndDebounceTimer = setTimeout(() => {
+        meetingEndDebounceTimer = null;
+        if (!detectMeeting()) onMeetingEnded();
+      }, 3000);
+    }
+  }
+}, 1000);
