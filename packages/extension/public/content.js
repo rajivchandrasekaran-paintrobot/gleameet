@@ -362,7 +362,10 @@
             }, 0.9);
           }
         } catch (err) {
-          console.error("[GleaMeet] Whisper transcription failed (mic):", err);
+          if (err?.message?.includes("Extension context invalidated") || err?.message?.includes("context invalidated")) {
+            return;
+          }
+          console.warn("[GleaMeet] Whisper transcription failed (mic):", err?.message || err);
         }
       };
       recorder.start();

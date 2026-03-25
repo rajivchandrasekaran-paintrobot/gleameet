@@ -544,8 +544,13 @@ function startAudioCapture(meetingSessionId: string): void {
               end_offset_ms: Date.now(),
             }, 0.9);
           }
-        } catch (err) {
-          console.error('[GleaMeet] Whisper transcription failed (mic):', err);
+        } catch (err: any) {
+          // Extension context invalidated = extension reloaded/popup closed — stop gracefully
+          if (err?.message?.includes('Extension context invalidated') ||
+              err?.message?.includes('context invalidated')) {
+            return; // Silent — expected when extension reloads
+          }
+          console.warn('[GleaMeet] Whisper transcription failed (mic):', err?.message || err);
         }
       };
 
