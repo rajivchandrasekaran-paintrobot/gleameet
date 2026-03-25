@@ -264,9 +264,10 @@ PostgreSQL 16. Schema at `packages/backend/src/db/schema.sql`.
 | `feature_observations` | Computed features per window (30s, 90s, full_meeting) |
 | `law_registry_entries` | Versioned law definitions (status: draft/active/deprecated/disabled) |
 | `law_triggers` | Triggered laws with confidence and evidence refs |
-| `prompt_events` | Nudge delivery tracking (display_state, shown_at, dismissed_at) |
-| `post_meeting_reports` | Report JSON blobs (summary, insights, strengths, growth areas, timeline) |
+| `prompt_events` | Nudge delivery tracking (display_state, shown_at, dismissed_at). `short_text` and `rationale_text` are TEXT (was VARCHAR(100)). `prompt_type` constraint includes `reinforce` |
+| `post_meeting_reports` | Report JSON blobs (summary, insights, strengths, growth areas, timeline, transcript_with_nudges) |
 | `meeting_transcripts` | Aggregated transcript JSON per session |
+| `user_sessions` | Session persistence: `session_token` (TEXT PK), `user_id`, `created_at`, `expires_at`, `last_used_at`. 30-day TTL. Survives Redis restarts |
 | `deletion_audits` | GDPR deletion audit log (scope: meeting or all_user_data) |
 
 **Cascade:** Deleting a user cascades through all related meeting data.
@@ -284,7 +285,7 @@ Redis 7. Key patterns prefixed with `gleameet:`.
 | `gleameet:meeting:<sessionId>:global_cooldown` | Global prompt cooldown | 15–60s |
 | `gleameet:meeting:<sessionId>:prompt_count` | Rate limit counter | 30min |
 | `gleameet:meeting:<sessionId>:speaking` | User speaking state | 4h |
-| `gleameet:session:<token>` | Auth session validation | 24h |
+| `gleameet:session:<token>` | Auth session validation (backed by PostgreSQL `user_sessions` for durability) | 30d |
 
 **MeetingState** includes: timing metrics, turn counts, linguistic accumulator counters (hedging, certainty, loss/gain framing), structural boolean flags, a rolling transcript buffer (last 10 segments), and prompt tracking arrays.
 
@@ -313,6 +314,10 @@ Chrome Extension                          Backend
 **Scopes:** `openid`, `email`, `profile`
 **Session format:** `session:<userId>:<uuid>`
 
+### Session Persistence
+
+Sessions are stored in both Redis (fast lookup) and PostgreSQL (`user_sessions` table, 30-day TTL) for durability. Auth middleware checks Redis first; on cache miss, falls back to Postgres and restores the token to Redis. `last_used_at` is updated on Postgres validation.
+
 ---
 
 ## CORS Policy
@@ -324,8 +329,8 @@ Configured in `packages/backend/src/index.ts`.
 | `chrome-extension://*` | Extension requests |
 | `http://localhost*` | Local development |
 | `https://meet.google.com` | Content script on Meet pages |
-| `https://teams.microsoft.com` | Future: Teams support |
-| `https://app.zoom.us` | Future: Zoom support |
+| `https://teams.microsoft.com` | Teams meeting pages |
+| `https://app.zoom.us` | Zoom meeting pages |
 
 Credentials enabled for all allowed origins.
 
@@ -366,3 +371,13 @@ Credentials enabled for all allowed origins.
 | v1.0.10 | 2026-03-22 | Report view in popup with summary analysis |
 | v1.0.11 | 2026-03-23 | Audio capture via getUserMedia in content script, Whisper transcription replacing caption scraping |
 | v1.0.12 | 2026-03-23 | Nudge rate limit raised (20→60), fatigue penalty reduction, meet.google.com CORS fix |
+| v1.0.13 | 2026-03-23 | Auto-reauth on 401 (session token expired due to Redis restart) |
+| v1.0.14 | 2026-03-23 | Session persistence to PostgreSQL (`user_sessions` table, 30-day TTL, survives Redis restarts) |
+| v1.0.15 | 2026-03-24 | Backfill `transcript_with_nudges` on report fetch for older meetings; delete meetings from history; timeline alignment fix |
+| v1.0.16 | 2026-03-24 | Correct transcript timestamps; suppress Web Speech/captions when Whisper active; `prompt_type` constraint adds `reinforce` |
+| v1.0.17 | 2026-03-24 | Expand `prompt_events` columns to TEXT (was VARCHAR(100) causing silent truncation) |
+| v1.0.18 | 2026-03-25 | Teams and Zoom support (mic-only Whisper; Meet DOM scraping unchanged) |
+| v1.0.19 | 2026-03-25 | Teams web meeting detection (URL-based + hash navigation polling); Whisper noise filtering; tab audio capture via MV3 offscreen document |
+| v1.0.20 | 2026-03-25 | Silence extension context invalidated error on audio transcription |
+| v1.0.21 | 2026-03-25 | Pause/resume coaching mid-meeting (`STOP_COACHING` pauses, `RESUME_COACHING` restarts, `END_MEETING` terminates + report) |
+| v1.0.22 | 2026-03-25 | Widen popup, fix text overflow in history and report views |
