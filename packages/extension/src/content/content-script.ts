@@ -177,9 +177,9 @@ function onMeetingDetected(): void {
 function onMeetingEnded(): void {
   state.meetingDetected = false;
 
-  // Notify background to stop coaching
-  if (state.status === 'active') {
-    chrome.runtime.sendMessage({ type: 'STOP_COACHING' }).catch(() => {});
+  // Meeting ended — end session and generate report
+  if (state.status === 'active' || state.status === 'ready') {
+    chrome.runtime.sendMessage({ type: 'END_MEETING' }).catch(() => {});
   }
 
   state.status = 'off';

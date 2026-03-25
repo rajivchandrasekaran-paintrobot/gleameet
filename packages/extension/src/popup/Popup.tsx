@@ -176,6 +176,10 @@ export const Popup: React.FC = () => {
     chrome.runtime.sendMessage({ type: 'STOP_COACHING' });
   };
 
+  const handleEndMeeting = () => {
+    chrome.runtime.sendMessage({ type: 'END_MEETING' });
+  };
+
   const handleMute = () => {
     chrome.runtime.sendMessage({ type: 'MUTE_COACHING' });
   };
@@ -326,7 +330,7 @@ export const Popup: React.FC = () => {
 
   const statusLabels: Record<SessionStatus, string> = {
     off: 'Not in a meeting',
-    ready: 'Meeting detected',
+    ready: state.meetingSessionId ? 'Coaching paused' : 'Meeting detected',
     active: 'Coaching active',
     muted: 'Coaching muted',
     error: 'Error',
@@ -587,7 +591,18 @@ export const Popup: React.FC = () => {
           </button>
         ) : (
           <>
-            {state.status === 'ready' && (
+            {state.status === 'ready' && state.meetingSessionId && (
+              <>
+                <button className="btn btn-primary" onClick={handleStartCoaching}>
+                  Resume Coaching
+                </button>
+                <button className="btn btn-danger" onClick={handleEndMeeting}>
+                  End Meeting
+                </button>
+              </>
+            )}
+
+            {state.status === 'ready' && !state.meetingSessionId && (
               <button className="btn btn-primary" onClick={handleStartCoaching}>
                 Enable Coaching
               </button>

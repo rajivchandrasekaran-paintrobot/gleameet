@@ -24696,6 +24696,9 @@
     const handleStopCoaching = () => {
       chrome.runtime.sendMessage({ type: "STOP_COACHING" });
     };
+    const handleEndMeeting = () => {
+      chrome.runtime.sendMessage({ type: "END_MEETING" });
+    };
     const handleMute = () => {
       chrome.runtime.sendMessage({ type: "MUTE_COACHING" });
     };
@@ -24831,7 +24834,7 @@
     };
     const statusLabels = {
       off: "Not in a meeting",
-      ready: "Meeting detected",
+      ready: state.meetingSessionId ? "Coaching paused" : "Meeting detected",
       active: "Coaching active",
       muted: "Coaching muted",
       error: "Error"
@@ -25016,7 +25019,11 @@
         ] })
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "controls", children: !state.authenticated ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-primary", onClick: handleSignIn, children: "Sign In" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
-        state.status === "ready" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-primary", onClick: handleStartCoaching, children: "Enable Coaching" }),
+        state.status === "ready" && state.meetingSessionId && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-primary", onClick: handleStartCoaching, children: "Resume Coaching" }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-danger", onClick: handleEndMeeting, children: "End Meeting" })
+        ] }),
+        state.status === "ready" && !state.meetingSessionId && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-primary", onClick: handleStartCoaching, children: "Enable Coaching" }),
         state.status === "active" && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
           /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-secondary", onClick: handleMute, children: "Mute Prompts" }),
           /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-danger", onClick: handleStopCoaching, children: "Stop Coaching" })

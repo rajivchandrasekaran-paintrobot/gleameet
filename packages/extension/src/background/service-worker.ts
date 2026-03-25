@@ -51,9 +51,33 @@ async function handleMessage(message: any): Promise<any> {
       return { status: 'ready' };
 
     case 'START_COACHING':
+      if (state.meetingSessionId) {
+        // Resuming existing session — reuse session, just restart intervals
+        state.status = 'active';
+        state.batchInterval = setInterval(flushEventBuffer, 3000);
+        state.pollingInterval = setInterval(pollForPrompts, 2000);
+        broadcastStatus();
+        // Notify content script
+        chrome.tabs.query({ url: ['https://meet.google.com/*', 'https://teams.microsoft.com/*', 'https://teams.live.com/*', 'https://zoom.us/wc/*', 'https://app.zoom.us/wc/*'] }, (tabs) => {
+          for (const tab of tabs) {
+            if (tab.id) {
+              chrome.tabs.sendMessage(tab.id, {
+                type: 'COACHING_STARTED',
+                meetingSessionId: state.meetingSessionId,
+                userId: state.userId,
+              }).catch(() => {});
+              startTabCapture(tab.id, state.meetingSessionId!);
+            }
+          }
+        });
+        return { status: 'active', meetingSessionId: state.meetingSessionId, resumed: true };
+      }
       return handleStartCoaching(message);
 
     case 'STOP_COACHING':
+      return handlePauseCoaching();
+
+    case 'END_MEETING':
       return handleStopCoaching();
 
     case 'MUTE_COACHING':
@@ -179,6 +203,27 @@ async function handleStartCoaching(message: any): Promise<any> {
   } catch (err: any) {
     state.status = 'error';
     broadcastStatus();
+    return { error: err.message };
+  }
+}
+
+/** Pause coaching but keep session alive for resuming */
+async function handlePauseCoaching(): Promise<any> {
+  try {
+    // Flush remaining events
+    if (state.eventBuffer.length > 0) await flushEventBuffer().catch(() => {});
+
+    // Stop intervals but keep session alive
+    if (state.batchInterval) { clearInterval(state.batchInterval); state.batchInterval = null; }
+    if (state.pollingInterval) { clearInterval(state.pollingInterval); state.pollingInterval = null; }
+
+    state.status = 'ready'; // ready = session exists but coaching paused
+    broadcastStatus();
+
+    console.log('[GleaMeet] Coaching paused, session preserved:', state.meetingSessionId);
+    return { status: 'ready' };
+  } catch (err: any) {
+    console.error('[GleaMeet] Pause coaching failed:', err);
     return { error: err.message };
   }
 }

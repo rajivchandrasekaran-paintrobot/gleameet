@@ -121,8 +121,8 @@
   }
   function onMeetingEnded() {
     state.meetingDetected = false;
-    if (state.status === "active") {
-      chrome.runtime.sendMessage({ type: "STOP_COACHING" }).catch(() => {
+    if (state.status === "active" || state.status === "ready") {
+      chrome.runtime.sendMessage({ type: "END_MEETING" }).catch(() => {
       });
     }
     state.status = "off";

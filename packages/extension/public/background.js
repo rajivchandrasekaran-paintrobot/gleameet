@@ -108,8 +108,30 @@ async function handleMessage(message) {
       broadcastStatus();
       return { status: "ready" };
     case "START_COACHING":
+      if (state.meetingSessionId) {
+        state.status = "active";
+        state.batchInterval = setInterval(flushEventBuffer, 3e3);
+        state.pollingInterval = setInterval(pollForPrompts, 2e3);
+        broadcastStatus();
+        chrome.tabs.query({ url: ["https://meet.google.com/*", "https://teams.microsoft.com/*", "https://teams.live.com/*", "https://zoom.us/wc/*", "https://app.zoom.us/wc/*"] }, (tabs) => {
+          for (const tab of tabs) {
+            if (tab.id) {
+              chrome.tabs.sendMessage(tab.id, {
+                type: "COACHING_STARTED",
+                meetingSessionId: state.meetingSessionId,
+                userId: state.userId
+              }).catch(() => {
+              });
+              startTabCapture(tab.id, state.meetingSessionId);
+            }
+          }
+        });
+        return { status: "active", meetingSessionId: state.meetingSessionId, resumed: true };
+      }
       return handleStartCoaching(message);
     case "STOP_COACHING":
+      return handlePauseCoaching();
+    case "END_MEETING":
       return handleStopCoaching();
     case "MUTE_COACHING":
       state.status = "muted";
@@ -208,6 +230,27 @@ async function handleStartCoaching(message) {
   } catch (err) {
     state.status = "error";
     broadcastStatus();
+    return { error: err.message };
+  }
+}
+async function handlePauseCoaching() {
+  try {
+    if (state.eventBuffer.length > 0) await flushEventBuffer().catch(() => {
+    });
+    if (state.batchInterval) {
+      clearInterval(state.batchInterval);
+      state.batchInterval = null;
+    }
+    if (state.pollingInterval) {
+      clearInterval(state.pollingInterval);
+      state.pollingInterval = null;
+    }
+    state.status = "ready";
+    broadcastStatus();
+    console.log("[GleaMeet] Coaching paused, session preserved:", state.meetingSessionId);
+    return { status: "ready" };
+  } catch (err) {
+    console.error("[GleaMeet] Pause coaching failed:", err);
     return { error: err.message };
   }
 }
