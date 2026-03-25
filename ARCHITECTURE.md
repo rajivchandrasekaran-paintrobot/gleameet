@@ -1,6 +1,6 @@
 # GleaMeet Architecture
 
-> **Last updated:** 2026-03-23
+> **Last updated:** 2026-03-25 (v1.0.22)
 
 GleaMeet is a real-time AI meeting coach delivered as a Chrome extension backed by a Node.js API server. It observes meeting signals (speech, captions, behavioral cues), evaluates them against 12 behavioral laws from Cialdini, Kahneman, and Thaler, and delivers personalized nudges via GPT-4o during the call. After the meeting, it generates a detailed coaching report.
 
@@ -55,14 +55,17 @@ flowchart LR
     E -->|prompt event| F[Redis<br/>Prompt Queue]
     F -->|GET /prompts/poll| G[Extension<br/>Overlay Shown]
 
-    H[Mic Audio<br/>getUserMedia] -->|10s WebM chunks| I[POST /audio/transcribe]
-    I -->|Whisper| J[Transcript Segments]
+    H[Mic Audio<br/>Content Script<br/>getUserMedia] -->|10s WebM chunks| I[POST /audio/transcribe]
+    I -->|Whisper<br/>noise filter + en| J[Transcript Segments]
     J --> C
+
+    B -->|getMediaStreamId| K[Offscreen Doc<br/>offscreen.html]
+    K -->|10s WebM chunks<br/>tab audio| I
 ```
 
 ### Pipeline Stages
 
-1. **Content Script** — Detects meeting state on `meet.google.com`, captures DOM events (speaker changes, captions, reactions) and mic audio via `getUserMedia`.
+1. **Content Script** — Detects meeting state on `meet.google.com`, `teams.microsoft.com`, and `zoom.us`. Captures DOM events (speaker changes, captions, reactions) and mic audio via `getUserMedia`. Web Speech API transcripts and DOM caption observation are suppressed when Whisper is active (`whisperActive` flag).
 
 2. **Service Worker** — Batches events and forwards them to the backend. Polls `/prompts/poll` on a timer to retrieve pending nudges.
 
@@ -78,18 +81,40 @@ flowchart LR
 
 ## Extension Architecture
 
-**Manifest V3** Chrome extension targeting Google Meet.
+**Manifest V3** Chrome extension targeting Google Meet, Microsoft Teams, and Zoom.
 
 | Component | Source | Role |
 |-----------|--------|------|
-| **Content Script** | `packages/extension/src/content/content-script.ts` | Meeting detection, DOM event capture, audio capture, prompt overlay rendering |
-| **Service Worker** | `packages/extension/src/background/service-worker.ts` | Message routing, session management, event batching, prompt polling |
+| **Content Script** | `packages/extension/src/content/content-script.ts` | Meeting detection, DOM event capture, mic audio capture, prompt overlay rendering |
+| **Service Worker** | `packages/extension/src/background/service-worker.ts` | Message routing, session management, event batching, prompt polling, tab audio orchestration |
+| **Offscreen Document** | `packages/extension/public/offscreen.html` + `src/offscreen.ts` | MV3-compatible tab audio capture via `getUserMedia` with `chromeMediaSource: "tab"` |
 | **Popup** | `packages/extension/src/popup/Popup.tsx` | Auth UI, coaching status, meeting history, post-meeting reports |
 | **API Client** | `packages/extension/src/utils/api-client.ts` | HTTP wrapper for all backend endpoints |
 
-**Permissions:** `activeTab`, `tabCapture`, `storage`, `alarms`, `identity`
-**Host permissions:** `https://meet.google.com/*`
+**Permissions:** `activeTab`, `tabCapture`, `storage`, `alarms`, `identity`, `offscreen`
+**Host permissions:** `https://meet.google.com/*`, `https://teams.microsoft.com/*`, `https://teams.live.com/*`, `https://zoom.us/*`, `https://app.zoom.us/*`
 **OAuth2 scopes:** `openid`, `email`, `profile`
+
+### Platform Detection
+
+The content script detects the meeting platform from the current URL and polls every 1 second for hash/pushState navigation changes:
+
+| Platform | URL Match | Signal Strategy |
+|----------|-----------|-----------------|
+| **Google Meet** | `meet.google.com` | Full DOM speech detection + caption observation + mic/tab audio |
+| **Microsoft Teams** | `teams.microsoft.com`, `teams.live.com` | URL patterns + DOM fallbacks; mic-only Whisper transcription |
+| **Zoom** | `zoom.us`, `app.zoom.us` | URL matching; mic-only Whisper transcription |
+
+### Coaching Lifecycle Messages
+
+| Message | Handler | Effect |
+|---------|---------|--------|
+| `START_COACHING` | `handleStartCoaching()` | Starts session, intervals, tab capture. If session exists, resumes it (`{ resumed: true }`) |
+| `STOP_COACHING` | `handlePauseCoaching()` | Pauses coaching — flushes events, clears intervals, sets status to `'ready'`. Session stays alive |
+| `RESUME_COACHING` | `handleStartCoaching()` | Restarts intervals on existing session |
+| `END_MEETING` | `handleStopCoaching()` | Terminates session, calls `/meetings/end`, generates report, resets to `'off'` |
+
+The content script's `onMeetingEnded()` sends `END_MEETING` (not `STOP_COACHING`) to ensure report generation.
 
 ---
 
@@ -164,6 +189,8 @@ Each law definition includes: `trigger_logic` (conditions on features), `disconf
 | **Whisper-1** | OpenAI | Audio transcription (mic capture) |
 | **Ollama (llama3.2)** | Local fallback | Development/offline mode |
 
+**Coaching scope:** All GPT-4o prompts (nudge personalization, reinforcement, report narratives) explicitly coach only the user ("YOU"). Other participants ("THEM") appear in transcript context but are never critiqued, praised, or referenced by name. The Feature Engine's `analyzeTranscriptText` only processes user-speaker segments; other-speaker text contributes only to timing metrics.
+
 **Nudge personalization:** Recent transcript (last 5 segments) + feature snapshot → JSON output with `short_text` (≤25 words) and `rationale_text` (≤20 words). Temperature 0.7, 6-second timeout with static template fallback.
 
 **Config:** `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL` environment variables. Defaults to local Ollama for development.
@@ -172,28 +199,55 @@ Each law definition includes: `trigger_logic` (conditions on features), `disconf
 
 ## Audio Capture & Transcription
 
-1. **Content script** calls `navigator.mediaDevices.getUserMedia({ audio: true })` to capture the user's microphone.
-2. Audio is recorded in 10-second WebM chunks via `MediaRecorder`.
-3. Each chunk is `POST`ed to `/audio/transcribe` as multipart form data (≤25 MB).
-4. Backend proxies to OpenAI Whisper-1 and returns transcribed text with stream type (mic/tab).
-5. Transcript segments are fed into the Feature Engine for linguistic analysis.
+Two audio streams are captured simultaneously:
 
-**Fallback:** DOM caption observer scrapes Google Meet's live captions as a lower-confidence signal source.
+### Mic Audio (Content Script)
+
+1. Content script calls `navigator.mediaDevices.getUserMedia({ audio: true })` to capture the user's microphone.
+2. Audio is recorded in 10-second WebM chunks via `MediaRecorder`.
+3. Each chunk is `POST`ed to `/audio/transcribe` as multipart form data (≤25 MB, stream type `mic`).
+
+### Tab Audio (Offscreen Document — MV3)
+
+1. Service worker calls `chrome.tabCapture.getMediaStreamId({ targetTabId })` to obtain a stream ID for the meeting tab.
+2. Service worker creates the offscreen document (`offscreen.html`) with reason `USER_MEDIA`.
+3. Service worker sends `START_TAB_CAPTURE` message to offscreen doc with `streamId`, `sessionToken`, and `apiBase`.
+4. Offscreen doc calls `navigator.mediaDevices.getUserMedia()` with `chromeMediaSource: "tab"` and the provided stream ID.
+5. Records 10-second WebM chunks; skips chunks <1 KB. Sends to `/audio/transcribe` (stream type `tab`).
+
+### Backend Transcription & Noise Filtering
+
+The `/audio/transcribe` endpoint proxies to OpenAI Whisper-1 with `language: "en"` forced. Before returning, it applies noise filtering via `isValidTranscript()`:
+
+- Minimum 3 characters and 2 words
+- **Noise patterns rejected:** single filler words ("thank you", "thanks"), bracket annotations (`[Music]`, `[Applause]`), music notation (`♪...♪`), lone parentheticals (`(laughing)`)
+- **Non-ASCII ratio:** Rejects if >30% of characters are non-ASCII (garbled Whisper output)
+- Returns empty string on invalid transcript
+
+Transcript segments are fed into the Feature Engine for linguistic analysis.
+
+### Signal Priority
+
+When Whisper is active (`whisperActive` flag), the content script suppresses Web Speech API transcripts and DOM caption observation to prevent duplicate signals. DOM captions remain available as a low-confidence (0.3) fallback when Whisper is inactive.
 
 ---
 
 ## Post-Meeting Reports
 
-Generated when `/meetings/end` is called. Stored in `post_meeting_reports`.
+Generated when `/meetings/end` is called (triggered by `END_MEETING` message). Stored in `post_meeting_reports`.
 
 | Field | Description |
 |-------|-------------|
-| `summary_analysis` | GPT-4o narrative summary of meeting coaching dynamics |
-| `transcript_with_nudges` | Full transcript annotated with nudge events inline |
+| `summary_analysis` | GPT-4o narrative summary of meeting coaching dynamics (user-only focus) |
+| `transcript_with_nudges` | Full transcript annotated with nudge events inline (merged & sorted by `timestamp_ms`) |
 | `strengths` | Positive behavioral patterns identified |
 | `growth_areas` | Areas for improvement with specific examples |
 | `recommended_actions` | Actionable next steps with reasons tied to law triggers |
 | `timeline` | Chronological sequence of key events and nudges |
+
+**`transcript_with_nudges` assembly:** Speech entries (filtered to text >5 chars) and nudge entries (prompts with `shown_at`) are merged into a single chronological array sorted by `timestamp_ms`. Nudge entries include `type` (`nudge` or `reinforcement`), combined `short_text` + `rationale`, and `nudge_law_id`. Timestamps use `event_time_utc` relative to `started_at`.
+
+**Backfill:** For older reports generated before `transcript_with_nudges` was stored, the field is backfilled on-the-fly when the report is fetched.
 
 ---
 
