@@ -25,8 +25,6 @@ interface ContentState {
   lastSpeechEmitMs: number;
   eventsEmitted: number;
   diagnosticInterval: ReturnType<typeof setInterval> | null;
-  audioRecorder: MediaRecorder | null;
-  audioInterval: ReturnType<typeof setInterval> | null;
 }
 
 const state: ContentState = {
@@ -43,8 +41,6 @@ const state: ContentState = {
   lastSpeechEmitMs: 0,
   eventsEmitted: 0,
   diagnosticInterval: null,
-  audioRecorder: null,
-  audioInterval: null,
 };
 
 // Caption selectors — ordered by likelihood, all tried on every DOM mutation
@@ -185,8 +181,8 @@ function onMeetingEnded(): void {
   state.status = 'off';
   state.meetingSessionId = null;
 
-  // Stop audio capture
-  stopAudioCapture();
+  // Stop audio capture (handled by offscreen document — send stop message)
+  chrome.runtime.sendMessage({ type: "STOP_AUDIO_CAPTURE" }).catch(() => {});
 
   // Clean up observers
   if (state.speechObserver) {
@@ -227,8 +223,11 @@ function startSignalCapture(): void {
     startMicrophoneDetection(); // Speech start/end detection via Web Speech API
   }
 
-  // Audio capture works on all platforms
-  startAudioCapture(state.meetingSessionId);
+  // Audio capture — delegate to offscreen document via service worker
+  chrome.runtime.sendMessage({
+    type: "START_AUDIO_CAPTURE",
+    meetingSessionId: state.meetingSessionId,
+  }).catch(() => {});
 
   // Emit session state change event
   emitEvent('session_state_changed', {
@@ -472,118 +471,8 @@ function emitEvent(
   chrome.runtime.sendMessage({ type: 'INGEST_EVENT', event }).catch(() => {});
 }
 
-// --- Audio Capture & Whisper Transcription (runs in content script for MV3 compat) ---
-
-const DEFAULT_API_BASE = 'https://gleameet.onrender.com';
-
-/** Resolve backend URL from chrome.storage.sync */
-async function getApiBase(): Promise<string> {
-  return new Promise((resolve) => {
-    chrome.storage.sync.get({ backendUrl: DEFAULT_API_BASE }, (items) => {
-      resolve(items.backendUrl || DEFAULT_API_BASE);
-    });
-  });
-}
-
-/** Get session token from chrome.storage.local */
-async function getStoredToken(): Promise<string | null> {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(['sessionToken'], (data) => {
-      resolve(data.sessionToken || null);
-    });
-  });
-}
-
-/** Start capturing mic audio, transcribing in 10-second chunks via Whisper */
-let whisperActive = false; // When true, suppress Web Speech API transcripts
-
-function startAudioCapture(meetingSessionId: string): void {
-  navigator.mediaDevices.getUserMedia({ audio: true })
-    .then((micStream) => {
-      whisperActive = true; // Whisper is now the primary transcript source
-      const recorder = new MediaRecorder(micStream, { mimeType: 'audio/webm' });
-      let chunks: Blob[] = [];
-
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunks.push(e.data);
-      };
-
-      recorder.onstop = async () => {
-        const blob = new Blob(chunks, { type: 'audio/webm' });
-        chunks = [];
-
-        if (blob.size < 1000) return; // Skip silent/tiny chunks
-
-        try {
-          const [apiBase, token] = await Promise.all([getApiBase(), getStoredToken()]);
-          const formData = new FormData();
-          formData.append('audio', blob, 'chunk.webm');
-          formData.append('stream', 'mic');
-          formData.append('meeting_session_id', meetingSessionId);
-
-          const headers: HeadersInit = {};
-          if (token) headers['Authorization'] = `Bearer ${token}`;
-
-          const response = await fetch(`${apiBase}/audio/transcribe`, {
-            method: 'POST',
-            headers,
-            body: formData,
-          });
-
-          if (!response.ok) {
-            console.error('[GleaMeet] Whisper API error:', response.status);
-            return;
-          }
-
-          const { text } = await response.json();
-          if (text?.trim()) {
-            emitEvent('transcript_segment', {
-              text: text.trim(),
-              speaker: 'user',
-              start_offset_ms: Date.now(),
-              end_offset_ms: Date.now(),
-            }, 0.9);
-          }
-        } catch (err: any) {
-          // Extension context invalidated = extension reloaded/popup closed — stop gracefully
-          if (err?.message?.includes('Extension context invalidated') ||
-              err?.message?.includes('context invalidated')) {
-            return; // Silent — expected when extension reloads
-          }
-          console.warn('[GleaMeet] Whisper transcription failed (mic):', err?.message || err);
-        }
-      };
-
-      recorder.start();
-      state.audioRecorder = recorder;
-      state.audioInterval = setInterval(() => {
-        if (recorder.state === 'recording') {
-          recorder.stop();
-          recorder.start();
-        }
-      }, 10000);
-
-      console.log('[GleaMeet] Mic audio capture started (content script)');
-    })
-    .catch((e) => {
-      console.warn('[GleaMeet] Mic capture failed:', e);
-    });
-}
-
-/** Stop mic audio capture */
-function stopAudioCapture(): void {
-  if (state.audioInterval) {
-    clearInterval(state.audioInterval);
-    state.audioInterval = null;
-  }
-  if (state.audioRecorder) {
-    if (state.audioRecorder.state === 'recording') {
-      try { state.audioRecorder.stop(); } catch (_) {}
-    }
-    state.audioRecorder.stream.getTracks().forEach(t => t.stop());
-    state.audioRecorder = null;
-  }
-}
+// Whisper active flag — when true, suppress Web Speech API transcripts
+let whisperActive = false;
 
 // --- Prompt Overlay UI (FR-055 through FR-063) ---
 
@@ -759,7 +648,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       state.status = 'active';
       updateStatusIndicator();
       startSignalCapture();
-      startAudioCapture(message.meetingSessionId);
+      break;
+
+    case 'WHISPER_ACTIVE':
+      whisperActive = true;
       break;
 
     case 'DISMISS_ALL_PROMPTS':

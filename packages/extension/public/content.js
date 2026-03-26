@@ -36,9 +36,7 @@
     userSpeaking: false,
     lastSpeechEmitMs: 0,
     eventsEmitted: 0,
-    diagnosticInterval: null,
-    audioRecorder: null,
-    audioInterval: null
+    diagnosticInterval: null
   };
   var CAPTION_SELECTORS = [
     // 2025/2026 Meet caption area — the bottom overlay with live text
@@ -127,7 +125,8 @@
     }
     state.status = "off";
     state.meetingSessionId = null;
-    stopAudioCapture();
+    chrome.runtime.sendMessage({ type: "STOP_AUDIO_CAPTURE" }).catch(() => {
+    });
     if (state.speechObserver) {
       state.speechObserver.disconnect();
       state.speechObserver = null;
@@ -154,7 +153,11 @@
       console.log(`[GleaMeet] ${platform}: using mic-only Whisper transcription`);
       startMicrophoneDetection();
     }
-    startAudioCapture(state.meetingSessionId);
+    chrome.runtime.sendMessage({
+      type: "START_AUDIO_CAPTURE",
+      meetingSessionId: state.meetingSessionId
+    }).catch(() => {
+    });
     emitEvent("session_state_changed", {
       previous_state: "ready",
       new_state: "active",
@@ -307,96 +310,7 @@
     chrome.runtime.sendMessage({ type: "INGEST_EVENT", event }).catch(() => {
     });
   }
-  var DEFAULT_API_BASE = "https://gleameet.onrender.com";
-  async function getApiBase() {
-    return new Promise((resolve) => {
-      chrome.storage.sync.get({ backendUrl: DEFAULT_API_BASE }, (items) => {
-        resolve(items.backendUrl || DEFAULT_API_BASE);
-      });
-    });
-  }
-  async function getStoredToken() {
-    return new Promise((resolve) => {
-      chrome.storage.local.get(["sessionToken"], (data) => {
-        resolve(data.sessionToken || null);
-      });
-    });
-  }
   var whisperActive = false;
-  function startAudioCapture(meetingSessionId) {
-    navigator.mediaDevices.getUserMedia({ audio: true }).then((micStream) => {
-      whisperActive = true;
-      const recorder = new MediaRecorder(micStream, { mimeType: "audio/webm" });
-      let chunks = [];
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunks.push(e.data);
-      };
-      recorder.onstop = async () => {
-        const blob = new Blob(chunks, { type: "audio/webm" });
-        chunks = [];
-        if (blob.size < 1e3) return;
-        try {
-          const [apiBase, token] = await Promise.all([getApiBase(), getStoredToken()]);
-          const formData = new FormData();
-          formData.append("audio", blob, "chunk.webm");
-          formData.append("stream", "mic");
-          formData.append("meeting_session_id", meetingSessionId);
-          const headers = {};
-          if (token) headers["Authorization"] = `Bearer ${token}`;
-          const response = await fetch(`${apiBase}/audio/transcribe`, {
-            method: "POST",
-            headers,
-            body: formData
-          });
-          if (!response.ok) {
-            console.error("[GleaMeet] Whisper API error:", response.status);
-            return;
-          }
-          const { text } = await response.json();
-          if (text?.trim()) {
-            emitEvent("transcript_segment", {
-              text: text.trim(),
-              speaker: "user",
-              start_offset_ms: Date.now(),
-              end_offset_ms: Date.now()
-            }, 0.9);
-          }
-        } catch (err) {
-          if (err?.message?.includes("Extension context invalidated") || err?.message?.includes("context invalidated")) {
-            return;
-          }
-          console.warn("[GleaMeet] Whisper transcription failed (mic):", err?.message || err);
-        }
-      };
-      recorder.start();
-      state.audioRecorder = recorder;
-      state.audioInterval = setInterval(() => {
-        if (recorder.state === "recording") {
-          recorder.stop();
-          recorder.start();
-        }
-      }, 1e4);
-      console.log("[GleaMeet] Mic audio capture started (content script)");
-    }).catch((e) => {
-      console.warn("[GleaMeet] Mic capture failed:", e);
-    });
-  }
-  function stopAudioCapture() {
-    if (state.audioInterval) {
-      clearInterval(state.audioInterval);
-      state.audioInterval = null;
-    }
-    if (state.audioRecorder) {
-      if (state.audioRecorder.state === "recording") {
-        try {
-          state.audioRecorder.stop();
-        } catch (_) {
-        }
-      }
-      state.audioRecorder.stream.getTracks().forEach((t) => t.stop());
-      state.audioRecorder = null;
-    }
-  }
   function createOverlay() {
     let overlay = document.getElementById("gleameet-overlay");
     if (!overlay) {
@@ -524,7 +438,9 @@
         state.status = "active";
         updateStatusIndicator();
         startSignalCapture();
-        startAudioCapture(message.meetingSessionId);
+        break;
+      case "WHISPER_ACTIVE":
+        whisperActive = true;
         break;
       case "DISMISS_ALL_PROMPTS":
         dismissCurrentPrompt();

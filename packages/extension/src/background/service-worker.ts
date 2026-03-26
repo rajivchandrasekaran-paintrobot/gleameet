@@ -131,6 +131,15 @@ async function handleMessage(message: any): Promise<any> {
     case 'ACK_PROMPT':
       return handleAckPrompt(message);
 
+    case 'START_AUDIO_CAPTURE':
+      handleStartAudioCapture(message.meetingSessionId);
+      return { ok: true };
+
+    case 'STOP_AUDIO_CAPTURE':
+      // Forward stop to offscreen document
+      chrome.runtime.sendMessage({ type: 'STOP_MIC_CAPTURE' }).catch(() => {});
+      return { ok: true };
+
     default:
       return { error: 'Unknown message type' };
   }
@@ -325,6 +334,17 @@ async function handleAckPrompt(message: any): Promise<any> {
   }
 }
 
+/** Ensure offscreen document exists, then run callback */
+function ensureOffscreenDocument(): Promise<void> {
+  return (chrome.offscreen as any).createDocument({
+    url: 'offscreen.html',
+    reasons: ['USER_MEDIA'],
+    justification: 'Audio capture for meeting transcription',
+  }).catch(() => {
+    // Offscreen document already exists — that's fine
+  });
+}
+
 /** Start tab audio capture via offscreen document */
 function startTabCapture(tabId: number, meetingSessionId: string): void {
   (chrome.tabCapture as any).getMediaStreamId({ targetTabId: tabId }, (streamId: string) => {
@@ -333,26 +353,42 @@ function startTabCapture(tabId: number, meetingSessionId: string): void {
       return;
     }
 
-    const sendCaptureMessage = () => {
+    const token = getSessionToken();
+    const apiBase = 'https://gleameet.onrender.com';
+
+    ensureOffscreenDocument().then(() => {
+      // Send tab audio capture
       chrome.runtime.sendMessage({
         type: 'START_TAB_CAPTURE',
         streamId,
         meetingSessionId,
-        sessionToken: getSessionToken(),
-        apiBase: 'https://gleameet.onrender.com',
+        sessionToken: token,
+        apiBase,
       }).catch(() => {});
-    };
 
-    (chrome.offscreen as any).createDocument({
-      url: 'offscreen.html',
-      reasons: ['USER_MEDIA'],
-      justification: 'Tab audio capture for meeting transcription',
-    }).then(() => {
-      sendCaptureMessage();
-    }).catch(() => {
-      // Offscreen document already exists
-      sendCaptureMessage();
+      // Also start mic capture in offscreen context (away from meeting tab)
+      chrome.runtime.sendMessage({
+        type: 'START_MIC_CAPTURE',
+        meetingSessionId,
+        sessionToken: token,
+        apiBase,
+      }).catch(() => {});
     });
+  });
+}
+
+/** Start mic-only audio capture via offscreen document (no tab capture needed) */
+function handleStartAudioCapture(meetingSessionId: string): void {
+  const token = getSessionToken();
+  const apiBase = 'https://gleameet.onrender.com';
+
+  ensureOffscreenDocument().then(() => {
+    chrome.runtime.sendMessage({
+      type: 'START_MIC_CAPTURE',
+      meetingSessionId,
+      sessionToken: token,
+      apiBase,
+    }).catch(() => {});
   });
 }
 
