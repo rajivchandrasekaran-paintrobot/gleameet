@@ -386,9 +386,8 @@ function observeCaptions(): void {
                      !!el.closest('[data-is-self="true"]');
       const speaker = isSelf ? 'user' : 'other';
 
-      // For user speech: skip captions if Whisper is active (Whisper is more accurate)
-      // For other speakers: always use captions (no other way to capture their speech without tabCapture)
-      if (whisperActive && speaker === 'user') continue;
+      // Skip all DOM captions when Whisper is active — tab audio capture handles both speakers
+      if (whisperActive) continue;
 
       console.log(`[GleaMeet] Caption captured (${speaker}): ${text.slice(0, 80)}`);
       emitEvent('transcript_segment', {

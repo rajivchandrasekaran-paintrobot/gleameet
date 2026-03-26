@@ -138,6 +138,7 @@ async function handleMessage(message: any): Promise<any> {
     case 'STOP_AUDIO_CAPTURE':
       // Forward stop to offscreen document
       chrome.runtime.sendMessage({ type: 'STOP_MIC_CAPTURE' }).catch(() => {});
+      chrome.runtime.sendMessage({ type: 'STOP_TAB_CAPTURE' }).catch(() => {});
       return { ok: true };
 
     default:
@@ -344,18 +345,51 @@ function ensureOffscreenDocument(): Promise<void> {
   });
 }
 
-/** Start mic-only audio capture via offscreen document */
+/** Start mic + tab audio capture via offscreen document */
 function handleStartAudioCapture(meetingSessionId: string): void {
   const token = getSessionToken();
   const apiBase = 'https://gleameet.onrender.com';
 
   ensureOffscreenDocument().then(() => {
+    // Start mic capture
     chrome.runtime.sendMessage({
       type: 'START_MIC_CAPTURE',
       meetingSessionId,
       sessionToken: token,
       apiBase,
     }).catch(() => {});
+
+    // Start tab capture — get the active meeting tab and capture its audio
+    chrome.tabs.query({
+      active: true,
+      url: [
+        'https://meet.google.com/*',
+        'https://teams.microsoft.com/*',
+        'https://teams.live.com/*',
+        'https://zoom.us/wc/*',
+        'https://app.zoom.us/wc/*',
+      ],
+    }, (tabs) => {
+      const tab = tabs[0];
+      if (!tab?.id) return;
+
+      (chrome.tabCapture as any).getMediaStreamId(
+        { targetTabId: tab.id },
+        (streamId: string) => {
+          if (chrome.runtime.lastError || !streamId) {
+            console.warn('[GleaMeet] tabCapture.getMediaStreamId failed:', chrome.runtime.lastError?.message);
+            return;
+          }
+          chrome.runtime.sendMessage({
+            type: 'START_TAB_CAPTURE',
+            meetingSessionId,
+            sessionToken: token,
+            apiBase,
+            streamId,
+          }).catch(() => {});
+        }
+      );
+    });
   });
 }
 

@@ -4,6 +4,9 @@
 
 let micRecorder: MediaRecorder | null = null;
 let micInterval: ReturnType<typeof setInterval> | null = null;
+let tabRecorder: MediaRecorder | null = null;
+let tabInterval: ReturnType<typeof setInterval> | null = null;
+let tabAudioCtx: AudioContext | null = null;
 
 chrome.runtime.onMessage.addListener(async (message) => {
   if (message.type === "START_MIC_CAPTURE") {
@@ -26,6 +29,41 @@ chrome.runtime.onMessage.addListener(async (message) => {
     });
   }
 
+  if (message.type === "START_TAB_CAPTURE") {
+    const { meetingSessionId, sessionToken, apiBase, streamId } = message;
+
+    (navigator.mediaDevices.getUserMedia as any)({
+      audio: {
+        mandatory: {
+          chromeMediaSource: "tab",
+          chromeMediaSourceId: streamId,
+        }
+      } as any,
+      video: false,
+    }).then((tabStream: MediaStream) => {
+      // Create audio context for non-destructive split
+      const audioCtx = new AudioContext();
+      tabAudioCtx = audioCtx;
+      const source = audioCtx.createMediaStreamSource(tabStream);
+
+      // Route 1: to speakers (keep original audio playing)
+      source.connect(audioCtx.destination);
+
+      // Route 2: to recorder (our copy for Whisper)
+      const dest = audioCtx.createMediaStreamDestination();
+      source.connect(dest);
+
+      // Record from the destination node (not the original stream)
+      const { recorder, interval } = startRecording(dest.stream, "tab", meetingSessionId, sessionToken, apiBase);
+      tabRecorder = recorder;
+      tabInterval = interval;
+
+      console.log("[GleaMeet Offscreen] Tab audio split: speakers + recorder both active");
+    }).catch((err: Error) => {
+      console.warn("[GleaMeet Offscreen] Tab capture failed:", err.message);
+    });
+  }
+
   if (message.type === "STOP_MIC_CAPTURE") {
     if (micInterval) { clearInterval(micInterval); micInterval = null; }
     if (micRecorder) {
@@ -36,6 +74,22 @@ chrome.runtime.onMessage.addListener(async (message) => {
       micRecorder = null;
     }
     console.log("[GleaMeet Offscreen] Mic capture stopped");
+  }
+
+  if (message.type === "STOP_TAB_CAPTURE") {
+    if (tabInterval) { clearInterval(tabInterval); tabInterval = null; }
+    if (tabRecorder) {
+      if (tabRecorder.state === "recording") {
+        try { tabRecorder.stop(); } catch (_) {}
+      }
+      tabRecorder.stream.getTracks().forEach(t => t.stop());
+      tabRecorder = null;
+    }
+    if (tabAudioCtx) {
+      tabAudioCtx.close().catch(() => {});
+      tabAudioCtx = null;
+    }
+    console.log("[GleaMeet Offscreen] Tab capture stopped");
   }
 });
 

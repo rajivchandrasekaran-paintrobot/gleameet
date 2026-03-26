@@ -179,6 +179,8 @@ async function handleMessage(message) {
     case "STOP_AUDIO_CAPTURE":
       chrome.runtime.sendMessage({ type: "STOP_MIC_CAPTURE" }).catch(() => {
       });
+      chrome.runtime.sendMessage({ type: "STOP_TAB_CAPTURE" }).catch(() => {
+      });
       return { ok: true };
     default:
       return { error: "Unknown message type" };
@@ -352,6 +354,36 @@ function handleStartAudioCapture(meetingSessionId) {
       sessionToken: token,
       apiBase
     }).catch(() => {
+    });
+    chrome.tabs.query({
+      active: true,
+      url: [
+        "https://meet.google.com/*",
+        "https://teams.microsoft.com/*",
+        "https://teams.live.com/*",
+        "https://zoom.us/wc/*",
+        "https://app.zoom.us/wc/*"
+      ]
+    }, (tabs) => {
+      const tab = tabs[0];
+      if (!tab?.id) return;
+      chrome.tabCapture.getMediaStreamId(
+        { targetTabId: tab.id },
+        (streamId) => {
+          if (chrome.runtime.lastError || !streamId) {
+            console.warn("[GleaMeet] tabCapture.getMediaStreamId failed:", chrome.runtime.lastError?.message);
+            return;
+          }
+          chrome.runtime.sendMessage({
+            type: "START_TAB_CAPTURE",
+            meetingSessionId,
+            sessionToken: token,
+            apiBase,
+            streamId
+          }).catch(() => {
+          });
+        }
+      );
     });
   });
 }

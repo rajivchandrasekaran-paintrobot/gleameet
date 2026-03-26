@@ -281,7 +281,7 @@
         const containerText = container?.previousElementSibling?.textContent?.trim() || "";
         const isSelf = containerText === "You" || !!el.closest("[data-self-name]") || !!el.closest('[data-is-self="true"]');
         const speaker = isSelf ? "user" : "other";
-        if (whisperActive && speaker === "user") continue;
+        if (whisperActive) continue;
         console.log(`[GleaMeet] Caption captured (${speaker}): ${text.slice(0, 80)}`);
         emitEvent("transcript_segment", {
           text,
