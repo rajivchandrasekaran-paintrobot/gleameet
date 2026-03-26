@@ -66,7 +66,7 @@ async function handleMessage(message: any): Promise<any> {
                 meetingSessionId: state.meetingSessionId,
                 userId: state.userId,
               }).catch(() => {});
-              startTabCapture(tab.id, state.meetingSessionId!);
+
             }
           }
         });
@@ -201,8 +201,7 @@ async function handleStartCoaching(message: any): Promise<any> {
             userId: state.userId,
           }).catch(() => {});
 
-          // Start tab audio capture via offscreen document
-          startTabCapture(tab.id, response.meeting_session_id);
+
         }
       }
     });
@@ -345,39 +344,7 @@ function ensureOffscreenDocument(): Promise<void> {
   });
 }
 
-/** Start tab audio capture via offscreen document */
-function startTabCapture(tabId: number, meetingSessionId: string): void {
-  (chrome.tabCapture as any).getMediaStreamId({ targetTabId: tabId }, (streamId: string) => {
-    if (chrome.runtime.lastError || !streamId) {
-      console.error('[GleaMeet] tabCapture.getMediaStreamId failed:', chrome.runtime.lastError?.message);
-      return;
-    }
-
-    const token = getSessionToken();
-    const apiBase = 'https://gleameet.onrender.com';
-
-    ensureOffscreenDocument().then(() => {
-      // Send tab audio capture
-      chrome.runtime.sendMessage({
-        type: 'START_TAB_CAPTURE',
-        streamId,
-        meetingSessionId,
-        sessionToken: token,
-        apiBase,
-      }).catch(() => {});
-
-      // Also start mic capture in offscreen context (away from meeting tab)
-      chrome.runtime.sendMessage({
-        type: 'START_MIC_CAPTURE',
-        meetingSessionId,
-        sessionToken: token,
-        apiBase,
-      }).catch(() => {});
-    });
-  });
-}
-
-/** Start mic-only audio capture via offscreen document (no tab capture needed) */
+/** Start mic-only audio capture via offscreen document */
 function handleStartAudioCapture(meetingSessionId: string): void {
   const token = getSessionToken();
   const apiBase = 'https://gleameet.onrender.com';

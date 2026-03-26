@@ -122,7 +122,6 @@ async function handleMessage(message) {
                 userId: state.userId
               }).catch(() => {
               });
-              startTabCapture(tab.id, state.meetingSessionId);
             }
           }
         });
@@ -228,7 +227,6 @@ async function handleStartCoaching(message) {
             userId: state.userId
           }).catch(() => {
           });
-          startTabCapture(tab.id, response.meeting_session_id);
         }
       }
     });
@@ -342,33 +340,6 @@ function ensureOffscreenDocument() {
     reasons: ["USER_MEDIA"],
     justification: "Audio capture for meeting transcription"
   }).catch(() => {
-  });
-}
-function startTabCapture(tabId, meetingSessionId) {
-  chrome.tabCapture.getMediaStreamId({ targetTabId: tabId }, (streamId) => {
-    if (chrome.runtime.lastError || !streamId) {
-      console.error("[GleaMeet] tabCapture.getMediaStreamId failed:", chrome.runtime.lastError?.message);
-      return;
-    }
-    const token = getSessionToken();
-    const apiBase = "https://gleameet.onrender.com";
-    ensureOffscreenDocument().then(() => {
-      chrome.runtime.sendMessage({
-        type: "START_TAB_CAPTURE",
-        streamId,
-        meetingSessionId,
-        sessionToken: token,
-        apiBase
-      }).catch(() => {
-      });
-      chrome.runtime.sendMessage({
-        type: "START_MIC_CAPTURE",
-        meetingSessionId,
-        sessionToken: token,
-        apiBase
-      }).catch(() => {
-      });
-    });
   });
 }
 function handleStartAudioCapture(meetingSessionId) {

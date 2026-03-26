@@ -6,7 +6,6 @@
     "description": "Private real-time AI meeting coach for Google Meet",
     "permissions": [
         "activeTab",
-        "tabCapture",
         "storage",
         "alarms",
         "identity",

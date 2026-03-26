@@ -4,18 +4,6 @@
   var micRecorder = null;
   var micInterval = null;
   chrome.runtime.onMessage.addListener(async (message) => {
-    if (message.type === "START_TAB_CAPTURE") {
-      const { meetingSessionId, sessionToken, apiBase } = message;
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          mandatory: {
-            chromeMediaSource: "tab",
-            chromeMediaSourceId: message.streamId
-          }
-        }
-      });
-      startRecording(stream, "tab", meetingSessionId, sessionToken, apiBase);
-    }
     if (message.type === "START_MIC_CAPTURE") {
       const { meetingSessionId, sessionToken, apiBase } = message;
       navigator.mediaDevices.getUserMedia({

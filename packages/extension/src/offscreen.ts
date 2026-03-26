@@ -1,27 +1,11 @@
 // Offscreen document for audio capture (MV3 compatible)
-// Handles BOTH tab audio and mic capture in a separate context
-// so it does NOT interfere with the meeting tab's audio routing.
+// Handles mic capture in a separate context so it does NOT
+// interfere with the meeting tab's audio routing.
 
 let micRecorder: MediaRecorder | null = null;
 let micInterval: ReturnType<typeof setInterval> | null = null;
 
 chrome.runtime.onMessage.addListener(async (message) => {
-  if (message.type === "START_TAB_CAPTURE") {
-    const { meetingSessionId, sessionToken, apiBase } = message;
-
-    // Get tab audio stream
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        mandatory: {
-          chromeMediaSource: "tab",
-          chromeMediaSourceId: message.streamId,
-        }
-      } as any
-    });
-
-    startRecording(stream, "tab", meetingSessionId, sessionToken, apiBase);
-  }
-
   if (message.type === "START_MIC_CAPTURE") {
     const { meetingSessionId, sessionToken, apiBase } = message;
 
