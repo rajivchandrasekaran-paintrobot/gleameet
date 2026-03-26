@@ -1,8 +1,20 @@
 # GleaMeet
 
-Private real-time AI meeting coach. GleaMeet runs as a Chrome extension that observes your Google Meet sessions and provides live behavioral coaching prompts based on 12 behavioral science laws from Kahneman, Cialdini, and Thaler.
+Private real-time AI meeting coach. GleaMeet runs as a Chrome extension that observes your Google Meet, Microsoft Teams (web), or Zoom (web) sessions and provides live behavioral coaching prompts based on 12 behavioral science laws from Kahneman, Cialdini, and Thaler.
 
 Coaching is **private to the user only** — no one else in the meeting can see the prompts.
+
+## Supported Platforms
+
+| Platform | Support | Transcription |
+|---|---|---|
+| Google Meet | Full | Whisper (mic + tab audio) + DOM captions fallback |
+| Microsoft Teams (web) | Full | Whisper (mic + tab audio) |
+| Zoom (web client) | Full | Whisper (mic + tab audio) |
+| Teams desktop app | In development | — |
+| Zoom desktop app | In development | — |
+
+> **Note on authentication:** The Chrome extension authenticates using the Google account signed into Chrome (via `chrome.identity`). This applies to all platforms — including Teams and Zoom web users. A Google account is required to use the extension, regardless of which meeting platform you use. Platform-native auth (Microsoft/Zoom login) is planned for the native desktop app versions.
 
 ## Architecture
 
