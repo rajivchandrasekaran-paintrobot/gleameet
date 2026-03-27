@@ -87,10 +87,17 @@ function detectMeeting(): boolean {
   // Microsoft Teams web
   if (url.includes('teams.microsoft.com') || url.includes('teams.live.com')) {
     // Check URL path for call indicators (hash/path changes when in a call)
+    const decodedUrl = decodeURIComponent(url);
     const inCallUrl = url.includes('/callingv2') ||
                       url.includes('/meet/') ||
                       url.includes('/_#/callingv2') ||
-                      url.includes('/calling');
+                      url.includes('/calling') ||
+                      url.includes('launcher.html') ||
+                      url.includes('/l/meetup-join') ||
+                      url.includes('type=meet') ||
+                      decodedUrl.includes('/meet/') ||     // encoded meet URLs
+                      decodedUrl.includes('/_#/meet') ||   // encoded hash URLs
+                      decodedUrl.includes('/callingv2');
 
     if (inCallUrl) return true;
 

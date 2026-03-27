@@ -70,7 +70,10 @@
       return hasVideo || hasLeaveBtn;
     }
     if (url.includes("teams.microsoft.com") || url.includes("teams.live.com")) {
-      const inCallUrl = url.includes("/callingv2") || url.includes("/meet/") || url.includes("/_#/callingv2") || url.includes("/calling");
+      const decodedUrl = decodeURIComponent(url);
+      const inCallUrl = url.includes("/callingv2") || url.includes("/meet/") || url.includes("/_#/callingv2") || url.includes("/calling") || url.includes("launcher.html") || url.includes("/l/meetup-join") || url.includes("type=meet") || decodedUrl.includes("/meet/") || // encoded meet URLs
+      decodedUrl.includes("/_#/meet") || // encoded hash URLs
+      decodedUrl.includes("/callingv2");
       if (inCallUrl) return true;
       const hasCallUI = !!document.querySelector('[data-tid="calling-screen"]') || !!document.querySelector('[data-tid="hangup-btn"]') || !!document.querySelector('button[aria-label*="Leave"]') || !!document.querySelector('button[aria-label*="leave"]') || !!document.querySelector('[class*="calling"]') || !!document.querySelector('[id*="calling"]') || document.title.toLowerCase().includes("meeting") || document.title.toLowerCase().includes("call");
       return hasCallUI || !!document.querySelector("video") && url.includes("teams");

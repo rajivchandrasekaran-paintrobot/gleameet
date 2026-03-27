@@ -38,7 +38,9 @@
                 "https://teams.microsoft.com/*",
                 "https://teams.live.com/*",
                 "https://zoom.us/wc/*",
-                "https://app.zoom.us/wc/*"
+                "https://app.zoom.us/wc/*",
+                "https://teams.microsoft.com/dl/*",
+                "https://teams.microsoft.com/l/*"
             ],
             "js": [
                 "content.js"
