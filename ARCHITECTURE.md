@@ -1,6 +1,6 @@
 # GleaMeet Architecture
 
-> **Last updated:** 2026-03-25 (v1.0.22)
+> **Last updated:** 2026-04-05 (web support stabilization)
 
 GleaMeet is a real-time AI meeting coach delivered as a Chrome extension backed by a Node.js API server. It observes meeting signals (speech, captions, behavioral cues), evaluates them against 12 behavioral laws from Cialdini, Kahneman, and Thaler, and delivers personalized nudges via GPT-4o during the call. After the meeting, it generates a detailed coaching report.
 
@@ -65,7 +65,7 @@ flowchart LR
 
 ### Pipeline Stages
 
-1. **Content Script** — Detects meeting state on `meet.google.com`, `teams.microsoft.com`, and `zoom.us`. Captures DOM events (speaker changes, captions, reactions) and mic audio via `getUserMedia`. Web Speech API transcripts and DOM caption observation are suppressed when Whisper is active (`whisperActive` flag).
+1. **Content Script** — Detects meeting state on `meet.google.com`, `teams.microsoft.com`, `teams.live.com`, `zoom.us/wc`, and `app.zoom.us/wc`. It maintains explicit platform state and only enables signal sources that the platform actually supports. Google Meet uses DOM speech/caption observation plus mic/tab audio. Teams and Zoom web use URL/UI meeting detection plus mic-first speech detection and tab/mic audio capture; they do not pretend to have Meet-equivalent DOM caption/speaker signals.
 
 2. **Service Worker** — Batches events and forwards them to the backend. Polls `/prompts/poll` on a timer to retrieve pending nudges.
 
@@ -85,8 +85,8 @@ flowchart LR
 
 | Component | Source | Role |
 |-----------|--------|------|
-| **Content Script** | `packages/extension/src/content/content-script.ts` | Meeting detection, DOM event capture, mic audio capture, prompt overlay rendering |
-| **Service Worker** | `packages/extension/src/background/service-worker.ts` | Message routing, session management, event batching, prompt polling, tab audio orchestration |
+| **Content Script** | `packages/extension/src/content/content-script.ts` | Platform-aware meeting detection, DOM/mic signal capture, prompt overlay rendering |
+| **Service Worker** | `packages/extension/src/background/service-worker.ts` | Session management, platform propagation, prompt routing, event batching, tab audio orchestration |
 | **Offscreen Document** | `packages/extension/public/offscreen.html` + `src/offscreen.ts` | MV3-compatible tab audio capture via `getUserMedia` with `chromeMediaSource: "tab"` |
 | **Popup** | `packages/extension/src/popup/Popup.tsx` | Auth UI, coaching status, meeting history, post-meeting reports |
 | **API Client** | `packages/extension/src/utils/api-client.ts` | HTTP wrapper for all backend endpoints |
@@ -97,24 +97,31 @@ flowchart LR
 
 ### Platform Detection
 
-The content script detects the meeting platform from the current URL and polls every 1 second for hash/pushState navigation changes:
+The extension uses a small capability model keyed by platform (`google_meet`, `teams`, `zoom`) and keeps platform state in both the content script and service worker. The content script detects the platform from the current URL and polls every 1 second for hash/pushState navigation changes:
 
 | Platform | URL Match | Signal Strategy |
 |----------|-----------|-----------------|
 | **Google Meet** | `meet.google.com` | Full DOM speech detection + caption observation + mic/tab audio |
-| **Microsoft Teams** | `teams.microsoft.com`, `teams.live.com` | URL patterns + DOM fallbacks; mic-only Whisper transcription |
-| **Zoom** | `zoom.us`, `app.zoom.us` | URL matching; mic-only Whisper transcription |
+| **Microsoft Teams** | `teams.microsoft.com`, `teams.live.com` | URL/UI-based meeting detection with end debounce; mic speech detection + mic/tab audio; no Meet-style DOM captions/speaker inference |
+| **Zoom** | `zoom.us/wc`, `app.zoom.us/wc` | URL/UI-based meeting detection with ended-screen filtering; mic speech detection + mic/tab audio; no Meet-style DOM captions/speaker inference |
+
+### Platform Propagation
+
+- `MEETING_DETECTED` now carries the detected platform into the service worker.
+- `START_COACHING` resolves the active supported web tab and starts the backend meeting session with that platform instead of defaulting to `google_meet`.
+- Raw events emitted from the content script carry the current platform explicitly.
+- `STATUS_UPDATE`, `COACHING_STARTED`, prompt delivery, and prompt dismissal are broadcast across all supported web meeting tabs rather than Google Meet only.
 
 ### Coaching Lifecycle Messages
 
 | Message | Handler | Effect |
 |---------|---------|--------|
-| `START_COACHING` | `handleStartCoaching()` | Starts session, intervals, tab capture. If session exists, resumes it (`{ resumed: true }`) |
+| `START_COACHING` | `handleStartCoaching()` | Starts session with the detected web platform, intervals, and tab capture. If session exists, resumes it (`{ resumed: true }`) |
 | `STOP_COACHING` | `handlePauseCoaching()` | Pauses coaching — flushes events, clears intervals, sets status to `'ready'`. Session stays alive |
 | `RESUME_COACHING` | `handleStartCoaching()` | Restarts intervals on existing session |
 | `END_MEETING` | `handleStopCoaching()` | Terminates session, calls `/meetings/end`, generates report, resets to `'off'` |
 
-The content script's `onMeetingEnded()` sends `END_MEETING` (not `STOP_COACHING`) to ensure report generation.
+The content script's `onMeetingEnded()` sends `END_MEETING` (not `STOP_COACHING`) to ensure report generation. Meeting-end detection is debounced to tolerate transient DOM/router churn on Meet, Teams, and Zoom web.
 
 ---
 
@@ -381,3 +388,4 @@ Credentials enabled for all allowed origins.
 | v1.0.20 | 2026-03-25 | Silence extension context invalidated error on audio transcription |
 | v1.0.21 | 2026-03-25 | Pause/resume coaching mid-meeting (`STOP_COACHING` pauses, `RESUME_COACHING` restarts, `END_MEETING` terminates + report) |
 | v1.0.22 | 2026-03-25 | Widen popup, fix text overflow in history and report views |
+| v1.0.23 | 2026-04-05 | Stabilize Teams/Zoom web support: explicit platform propagation, broader prompt/tab routing, and platform-aware capability handling for non-Meet web clients |

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { getHistory, getTranscript, getReport, deleteMeeting, setSessionToken } from '../utils/api-client';
-import type { PostMeetingReport, TranscriptWithNudgesEntry } from '@gleameet/shared';
+import { getPlatformDisplayName } from '../utils/platform';
+import type { Platform, PostMeetingReport, TranscriptWithNudgesEntry } from '@gleameet/shared';
 
 type SessionStatus = 'off' | 'ready' | 'active' | 'muted' | 'error';
 type View = 'main' | 'history' | 'transcript' | 'report';
@@ -11,6 +12,7 @@ interface PopupState {
   meetingSessionId: string | null;
   authenticated: boolean;
   userId: string | null;
+  platform: Platform | null;
 }
 
 interface MeetingEntry {
@@ -63,6 +65,7 @@ export const Popup: React.FC = () => {
     meetingSessionId: null,
     authenticated: false,
     userId: null,
+    platform: null,
   });
   const [view, setView] = useState<View>('main');
   const [meetings, setMeetings] = useState<MeetingEntry[]>([]);
@@ -89,6 +92,7 @@ export const Popup: React.FC = () => {
           meetingSessionId: response.meetingSessionId || null,
           authenticated: isAuthenticated,
           userId: response.userId || null,
+          platform: response.platform || null,
         }));
 
         // If not yet authenticated, try silently — works if Chrome profile already has consent
@@ -114,6 +118,7 @@ export const Popup: React.FC = () => {
           ...prev,
           status: message.status,
           meetingSessionId: message.meetingSessionId,
+          platform: message.platform || null,
         }));
       }
     };
@@ -335,6 +340,7 @@ export const Popup: React.FC = () => {
     muted: 'Coaching muted',
     error: 'Error',
   };
+  const platformLabel = getPlatformDisplayName(state.platform);
 
   // Report view
   if (view === 'report' && report) {
@@ -576,6 +582,11 @@ export const Popup: React.FC = () => {
           <span className="dot" />
           {statusLabels[state.status]}
         </div>
+        {state.platform && (
+          <div style={{ fontSize: '11px', color: '#777', marginTop: '4px' }}>
+            Platform: {platformLabel}
+          </div>
+        )}
         {state.meetingSessionId && (
           <div style={{ fontSize: '11px', color: '#999', marginTop: '4px' }}>
             Session: {state.meetingSessionId.slice(0, 8)}...
@@ -632,7 +643,7 @@ export const Popup: React.FC = () => {
 
             {state.status === 'off' && (
               <p style={{ fontSize: '13px', color: '#6b6b80', textAlign: 'center' }}>
-                Join a Google Meet call to start coaching
+                Join a supported Google Meet, Teams, or Zoom web meeting to start coaching
               </p>
             )}
 

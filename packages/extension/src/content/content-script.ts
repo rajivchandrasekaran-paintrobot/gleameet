@@ -1,6 +1,6 @@
 /**
  * GleaMeet Content Script
- * Injected into Google Meet pages. Handles:
+ * Injected into supported meeting pages. Handles:
  * - Meeting detection (FR-005, FR-006)
  * - Signal capture (FR-016 through FR-022)
  * - Prompt overlay rendering (FR-055 through FR-063)
@@ -8,13 +8,15 @@
  */
 
 import { createEvent } from '../utils/event-factory';
-import type { PromptEvent } from '@gleameet/shared';
+import { detectPlatformFromUrl, getPlatformCapabilities } from '../utils/platform';
+import type { Platform, PromptEvent } from '@gleameet/shared';
 
 /** Session context maintained by the content script */
 interface ContentState {
   meetingDetected: boolean;
   meetingSessionId: string | null;
   userId: string | null;
+  platform: Platform | null;
   status: 'off' | 'ready' | 'active' | 'muted' | 'error';
   currentPrompt: PromptEvent | null;
   promptDismissTimer: ReturnType<typeof setTimeout> | null;
@@ -31,6 +33,7 @@ const state: ContentState = {
   meetingDetected: false,
   meetingSessionId: null,
   userId: null,
+  platform: null,
   status: 'off',
   currentPrompt: null,
   promptDismissTimer: null,
@@ -64,19 +67,18 @@ const SPEECH_THROTTLE_MS = 500;
 // --- Meeting Detection (FR-005, FR-006) ---
 
 /** Detect current platform */
-function getPlatform(): 'google_meet' | 'teams' | 'zoom' {
-  const url = window.location.href;
-  if (url.includes('teams.microsoft.com') || url.includes('teams.live.com')) return 'teams';
-  if (url.includes('zoom.us') || url.includes('app.zoom.us')) return 'zoom';
-  return 'google_meet';
+function getPlatform(): Platform | null {
+  return detectPlatformFromUrl(window.location.href);
 }
 
 /** Detect if we're in an active video call */
 function detectMeeting(): boolean {
   const url = window.location.href;
+  const platform = getPlatform();
+  if (!platform) return false;
 
   // Google Meet
-  if (/meet\.google\.com\/[a-z]+-[a-z]+-[a-z]+/i.test(url)) {
+  if (platform === 'google_meet' && /meet\.google\.com\/[a-z]+-[a-z]+-[a-z]+/i.test(url)) {
     const hasVideo = !!document.querySelector('video');
     const hasLeaveBtn = !!document.querySelector('[data-is-muted]') ||
                         !!document.querySelector('[aria-label*="Leave"]') ||
@@ -85,7 +87,7 @@ function detectMeeting(): boolean {
   }
 
   // Microsoft Teams web
-  if (url.includes('teams.microsoft.com') || url.includes('teams.live.com')) {
+  if (platform === 'teams') {
     // Check URL path for call indicators (hash/path changes when in a call)
     const decodedUrl = decodeURIComponent(url);
     const inCallUrl = url.includes('/callingv2') ||
@@ -99,27 +101,45 @@ function detectMeeting(): boolean {
                       decodedUrl.includes('/_#/meet') ||   // encoded hash URLs
                       decodedUrl.includes('/callingv2');
 
-    if (inCallUrl) return true;
+    const endedUi =
+      !!document.querySelector('[data-tid="call-ended-screen"]') ||
+      /meeting has ended|call ended|you left the meeting/i.test(document.body.textContent || '');
 
-    // DOM checks (may be in iframes but try anyway)
-    const hasCallUI =
+    const hasCallUi =
       !!document.querySelector('[data-tid="calling-screen"]') ||
       !!document.querySelector('[data-tid="hangup-btn"]') ||
+      !!document.querySelector('[data-tid="toggle-mute"]') ||
+      !!document.querySelector('[data-tid="toggle-video"]') ||
+      !!document.querySelector('[data-tid="prejoin-join-button"]') ||
       !!document.querySelector('button[aria-label*="Leave"]') ||
       !!document.querySelector('button[aria-label*="leave"]') ||
       !!document.querySelector('[class*="calling"]') ||
-      !!document.querySelector('[id*="calling"]') ||
+      !!document.querySelector('[id*="calling"]');
+
+    const titleLooksMeetingLike =
       document.title.toLowerCase().includes('meeting') ||
       document.title.toLowerCase().includes('call');
 
-    return hasCallUI || (!!document.querySelector('video') && url.includes('teams'));
+    // Require a stronger signal than title-only to avoid false positives on calendar/lobby pages.
+    return !endedUi && (inCallUrl || hasCallUi || (!!document.querySelector('video') && titleLooksMeetingLike));
   }
 
   // Zoom web client
-  if (url.includes('zoom.us/wc') || url.includes('app.zoom.us/wc')) {
-    return !!document.querySelector('.meeting-app') ||
-           !!document.querySelector('#wc-container-right') ||
-           !!document.querySelector('video');
+  if (platform === 'zoom') {
+    const hasMeetingUrl = url.includes('/wc/') || url.includes('/join');
+    const hasMeetingUi =
+      !!document.querySelector('.meeting-app') ||
+      !!document.querySelector('#wc-container-right') ||
+      !!document.querySelector('.footer-button-base__button-label') ||
+      !!document.querySelector('[aria-label*="Leave"]') ||
+      !!document.querySelector('[aria-label*="leave"]') ||
+      !!document.querySelector('[aria-label*="mute"]') ||
+      !!document.querySelector('[class*="footer"] button') ||
+      !!document.querySelector('video');
+    const endedScreen =
+      !!document.querySelector('.zm-modal-body-title') &&
+      /ended|left|removed/i.test(document.body.textContent || '');
+    return !endedScreen && hasMeetingUrl && hasMeetingUi;
   }
 
   return false;
@@ -165,11 +185,15 @@ function startMeetingDetection(): void {
 }
 
 function onMeetingDetected(): void {
+  const platform = getPlatform();
+  if (!platform) return;
+
   state.meetingDetected = true;
+  state.platform = platform;
   state.status = 'ready';
 
   // Notify background service worker (FR-006)
-  chrome.runtime.sendMessage({ type: 'MEETING_DETECTED', platform: getPlatform() }).catch(() => {});
+  chrome.runtime.sendMessage({ type: 'MEETING_DETECTED', platform }).catch(() => {});
 
   // Create and inject status indicator (FR-008)
   injectStatusIndicator();
@@ -187,6 +211,7 @@ function onMeetingEnded(): void {
 
   state.status = 'off';
   state.meetingSessionId = null;
+  state.platform = null;
 
   // Stop audio capture (handled by offscreen document — send stop message)
   chrome.runtime.sendMessage({ type: "STOP_AUDIO_CAPTURE" }).catch(() => {});
@@ -204,6 +229,7 @@ function onMeetingEnded(): void {
     clearInterval(state.diagnosticInterval);
     state.diagnosticInterval = null;
   }
+  stopMicrophoneDetection();
 
   // Clean up UI
   removeOverlay();
@@ -218,15 +244,18 @@ function onMeetingEnded(): void {
 function startSignalCapture(): void {
   if (!state.meetingSessionId || !state.userId) return;
 
-  const platform = getPlatform();
+  const platform = state.platform ?? getPlatform();
+  if (!platform) return;
+  const capabilities = getPlatformCapabilities(platform);
 
-  if (platform === 'google_meet') {
-    // Google Meet: full signal capture (DOM speech + captions + audio)
+  if (capabilities.supportsDomSpeechSignals) {
     observeSpeechIndicators();
+  }
+  if (capabilities.supportsDomCaptions) {
     observeCaptions();
-  } else {
-    // Teams/Zoom: mic-only transcription via Whisper (DOM is platform-specific and fragile)
-    console.log(`[GleaMeet] ${platform}: using mic-only Whisper transcription`);
+  }
+  if (!capabilities.supportsDomSpeechSignals && capabilities.supportsMicSpeechDetection) {
+    console.log(`[GleaMeet] ${platform}: using mic-first signal capture; DOM-only Meet signals disabled`);
     startMicrophoneDetection(); // Speech start/end detection via Web Speech API
   }
 
@@ -270,8 +299,22 @@ function observeSpeechIndicators(): void {
   state.speechObserver.observe(document.body, { childList: true, subtree: false });
 }
 
-let micCheckInterval: ReturnType<typeof setInterval> | null = null;
 let recognition: any = null;
+let recognitionShouldRun = false;
+
+function stopMicrophoneDetection(): void {
+  recognitionShouldRun = false;
+  if (!recognition) return;
+
+  try {
+    recognition.onend = null;
+    recognition.stop?.();
+    recognition.abort?.();
+  } catch (_err) {
+    // Ignore cleanup failures from browser speech recognition internals.
+  }
+  recognition = null;
+}
 
 /** Use Web Speech API for speech detection + transcript (no extra mic permission needed) */
 function startMicrophoneDetection(): void {
@@ -281,7 +324,12 @@ function startMicrophoneDetection(): void {
     return;
   }
 
+  stopMicrophoneDetection();
+  recognitionShouldRun = true;
+
   function startRecognition() {
+    if (!recognitionShouldRun) return;
+
     recognition = new SpeechRecognition();
     recognition.continuous = true;
     recognition.interimResults = true;
@@ -331,12 +379,13 @@ function startMicrophoneDetection(): void {
       if (event.error === 'no-speech') return; // ignore, auto-restarts
       console.warn('[GleaMeet] Speech recognition error:', event.error);
       // Restart on recoverable errors
-      if (['audio-capture', 'network', 'aborted'].includes(event.error)) {
+      if (recognitionShouldRun && ['audio-capture', 'network', 'aborted'].includes(event.error)) {
         setTimeout(() => { try { startRecognition(); } catch(e) {} }, 1000);
       }
     };
 
     recognition.onend = () => {
+      if (!recognitionShouldRun) return;
       // Auto-restart with backoff — Meet may have taken the mic temporarily
       setTimeout(() => {
         try { startRecognition(); } catch(e) {
@@ -463,13 +512,14 @@ function emitEvent(
   payload: Record<string, unknown>,
   captureConfidence: number | null = null
 ): void {
-  if (!state.meetingSessionId || !state.userId) return;
+  if (!state.meetingSessionId || !state.userId || !state.platform) return;
 
   state.eventsEmitted++;
 
   const event = createEvent(
     state.meetingSessionId,
     state.userId,
+    state.platform,
     eventType as any,
     payload,
     captureConfidence
@@ -640,6 +690,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     case 'STATUS_UPDATE':
       state.status = message.status;
       state.meetingSessionId = message.meetingSessionId;
+      state.platform = message.platform ?? state.platform ?? getPlatform();
       updateStatusIndicator();
       break;
 
@@ -652,6 +703,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     case 'COACHING_STARTED':
       state.meetingSessionId = message.meetingSessionId;
       state.userId = message.userId;
+      state.platform = message.platform ?? getPlatform();
       state.status = 'active';
       updateStatusIndicator();
       startSignalCapture();
@@ -739,6 +791,7 @@ let lastUrl = window.location.href;
 setInterval(() => {
   if (window.location.href !== lastUrl) {
     lastUrl = window.location.href;
+    state.platform = getPlatform();
     const inMeeting = detectMeeting();
     if (inMeeting && !state.meetingDetected) {
       onMeetingDetected();

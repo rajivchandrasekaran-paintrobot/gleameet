@@ -13,6 +13,7 @@ function generateUUID(): string {
 export function createEvent(
   meetingSessionId: string,
   userId: string,
+  platform: Platform,
   eventType: EventType,
   payload: Record<string, unknown>,
   captureConfidence: number | null = null
@@ -21,7 +22,7 @@ export function createEvent(
     event_id: generateUUID(),
     meeting_session_id: meetingSessionId,
     user_id: userId,
-    platform: 'google_meet' as Platform,
+    platform,
     event_type: eventType,
     event_time_utc: new Date().toISOString(),
     source: 'extension',

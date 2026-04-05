@@ -5,13 +5,14 @@
  */
 
 import { setSessionToken, getSessionToken, sendEventBatch, pollPrompts, endMeeting, startMeeting, ackPrompt, createSession } from '../utils/api-client';
-import { createEvent } from '../utils/event-factory';
-import type { RawEvent, MeetingStartRequest, PromptEvent, PromptAckRequest } from '@gleameet/shared';
+import { detectPlatformFromUrl, MEETING_TAB_URL_PATTERNS } from '../utils/platform';
+import type { RawEvent, MeetingStartRequest, PromptEvent, PromptAckRequest, Platform } from '@gleameet/shared';
 
 /** Current meeting session state */
 interface SessionState {
   meetingSessionId: string | null;
   userId: string | null;
+  platform: Platform | null;
   status: 'off' | 'ready' | 'active' | 'muted' | 'error';
   eventBuffer: RawEvent[];
   pollingInterval: ReturnType<typeof setInterval> | null;
@@ -21,6 +22,7 @@ interface SessionState {
 const state: SessionState = {
   meetingSessionId: null,
   userId: null,
+  platform: null,
   status: 'off',
   eventBuffer: [],
   pollingInterval: null,
@@ -46,6 +48,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 async function handleMessage(message: any): Promise<any> {
   switch (message.type) {
     case 'MEETING_DETECTED':
+      state.platform = message.platform || state.platform;
       state.status = 'ready';
       broadcastStatus();
       return { status: 'ready' };
@@ -58,13 +61,14 @@ async function handleMessage(message: any): Promise<any> {
         state.pollingInterval = setInterval(pollForPrompts, 2000);
         broadcastStatus();
         // Notify content script
-        chrome.tabs.query({ url: ['https://meet.google.com/*', 'https://teams.microsoft.com/*', 'https://teams.live.com/*', 'https://zoom.us/wc/*', 'https://app.zoom.us/wc/*'] }, (tabs) => {
+        chrome.tabs.query({ url: [...MEETING_TAB_URL_PATTERNS] }, (tabs) => {
           for (const tab of tabs) {
             if (tab.id) {
               chrome.tabs.sendMessage(tab.id, {
                 type: 'COACHING_STARTED',
                 meetingSessionId: state.meetingSessionId,
                 userId: state.userId,
+                platform: state.platform,
               }).catch(() => {});
 
             }
@@ -101,6 +105,7 @@ async function handleMessage(message: any): Promise<any> {
         status: state.status,
         meetingSessionId: state.meetingSessionId,
         userId: state.userId,
+        platform: state.platform,
         authenticated: !!getSessionToken(),
       };
 
@@ -174,8 +179,13 @@ async function handleStartCoaching(message: any): Promise<any> {
       return { error: 'Not authenticated. Please sign in first.' };
     }
 
+    const platform = await resolveActiveMeetingPlatform(message.platform);
+    if (!platform) {
+      return { error: 'No supported web meeting tab detected.' };
+    }
+
     const request: MeetingStartRequest = {
-      platform: 'google_meet',
+      platform,
       meeting_label: message.meetingLabel || null,
       extension_version: chrome.runtime.getManifest().version,
       consent: message.consent,
@@ -183,6 +193,7 @@ async function handleStartCoaching(message: any): Promise<any> {
 
     const response = await startMeeting(request);
     state.meetingSessionId = response.meeting_session_id;
+    state.platform = platform;
     state.status = 'active';
     state.eventBuffer = [];
 
@@ -193,13 +204,14 @@ async function handleStartCoaching(message: any): Promise<any> {
     state.pollingInterval = setInterval(pollForPrompts, 2000);
 
     // Notify content script that coaching has started (audio capture runs there)
-    chrome.tabs.query({ url: ['https://meet.google.com/*', 'https://teams.microsoft.com/*', 'https://teams.live.com/*', 'https://zoom.us/wc/*', 'https://app.zoom.us/wc/*'] }, (tabs) => {
+    chrome.tabs.query({ url: [...MEETING_TAB_URL_PATTERNS] }, (tabs) => {
       for (const tab of tabs) {
         if (tab.id) {
           chrome.tabs.sendMessage(tab.id, {
             type: 'COACHING_STARTED',
             meetingSessionId: response.meeting_session_id,
             userId: state.userId,
+            platform,
           }).catch(() => {});
 
 
@@ -252,7 +264,7 @@ async function handleStopCoaching(): Promise<any> {
       if (state.pollingInterval) clearInterval(state.pollingInterval);
 
       // Dismiss all prompts on content scripts
-      chrome.tabs.query({ url: 'https://meet.google.com/*' }, (tabs) => {
+      chrome.tabs.query({ url: [...MEETING_TAB_URL_PATTERNS] }, (tabs) => {
         for (const tab of tabs) {
           if (tab.id) {
             chrome.tabs.sendMessage(tab.id, { type: 'DISMISS_ALL_PROMPTS' }).catch(() => {});
@@ -261,6 +273,7 @@ async function handleStopCoaching(): Promise<any> {
       });
 
       state.meetingSessionId = null;
+      state.platform = null;
       state.status = 'off';
       state.eventBuffer = [];
       state.batchInterval = null;
@@ -360,17 +373,7 @@ function handleStartAudioCapture(meetingSessionId: string): void {
     }).catch(() => {});
 
     // Start tab capture — get the active meeting tab and capture its audio
-    chrome.tabs.query({
-      active: true,
-      url: [
-        'https://meet.google.com/*',
-        'https://teams.microsoft.com/*',
-        'https://teams.live.com/*',
-        'https://zoom.us/wc/*',
-        'https://app.zoom.us/wc/*',
-      ],
-    }, (tabs) => {
-      const tab = tabs[0];
+    getPreferredMeetingTab((tab) => {
       if (!tab?.id) return;
 
       (chrome.tabCapture as any).getMediaStreamId(
@@ -399,12 +402,13 @@ function broadcastStatus(): void {
     type: 'STATUS_UPDATE',
     status: state.status,
     meetingSessionId: state.meetingSessionId,
+    platform: state.platform,
   }).catch(() => {}); // Ignore if no listeners
 }
 
-/** Broadcast a prompt to the content script on the active Meet tab */
+/** Broadcast a prompt to content scripts on supported meeting tabs */
 function broadcastPrompt(prompt: PromptEvent): void {
-  chrome.tabs.query({ url: 'https://meet.google.com/*' }, (tabs) => {
+  chrome.tabs.query({ url: [...MEETING_TAB_URL_PATTERNS] }, (tabs) => {
     for (const tab of tabs) {
       if (tab.id) {
         chrome.tabs.sendMessage(tab.id, {
@@ -414,4 +418,23 @@ function broadcastPrompt(prompt: PromptEvent): void {
       }
     }
   });
+}
+
+function getPreferredMeetingTab(callback: (tab: chrome.tabs.Tab | undefined) => void): void {
+  chrome.tabs.query({ url: [...MEETING_TAB_URL_PATTERNS] }, (tabs) => {
+    const preferredTab = tabs.find(tab => tab.active) ?? tabs[0];
+    callback(preferredTab);
+  });
+}
+
+async function resolveActiveMeetingPlatform(platformHint?: Platform | null): Promise<Platform | null> {
+  if (platformHint) return platformHint;
+  if (state.platform) return state.platform;
+
+  const tabs = await new Promise<chrome.tabs.Tab[]>((resolve) => {
+    chrome.tabs.query({ url: [...MEETING_TAB_URL_PATTERNS] }, resolve);
+  });
+
+  const preferredTab = tabs.find(tab => tab.active) ?? tabs[0];
+  return preferredTab?.url ? detectPlatformFromUrl(preferredTab.url) : null;
 }

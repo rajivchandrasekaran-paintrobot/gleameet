@@ -24569,6 +24569,22 @@
     sessionToken = token;
   }
 
+  // src/utils/platform.ts
+  function getPlatformDisplayName(platform) {
+    switch (platform) {
+      case "google_meet":
+        return "Google Meet";
+      case "teams":
+        return "Microsoft Teams";
+      case "zoom":
+        return "Zoom";
+      case "slack":
+        return "Slack";
+      default:
+        return "meeting";
+    }
+  }
+
   // src/popup/Popup.tsx
   var import_jsx_runtime = __toESM(require_jsx_runtime());
   function formatDuration(seconds) {
@@ -24598,7 +24614,8 @@
       status: "off",
       meetingSessionId: null,
       authenticated: false,
-      userId: null
+      userId: null,
+      platform: null
     });
     const [view, setView] = (0, import_react.useState)("main");
     const [meetings, setMeetings] = (0, import_react.useState)([]);
@@ -24620,7 +24637,8 @@
             status: response.status || "off",
             meetingSessionId: response.meetingSessionId || null,
             authenticated: isAuthenticated,
-            userId: response.userId || null
+            userId: response.userId || null,
+            platform: response.platform || null
           }));
           if (!isAuthenticated) {
             chrome.identity.getAuthToken({ interactive: false }, (token) => {
@@ -24640,7 +24658,8 @@
           setState((prev) => ({
             ...prev,
             status: message.status,
-            meetingSessionId: message.meetingSessionId
+            meetingSessionId: message.meetingSessionId,
+            platform: message.platform || null
           }));
         }
       };
@@ -24839,6 +24858,7 @@
       muted: "Coaching muted",
       error: "Error"
     };
+    const platformLabel = getPlatformDisplayName(state.platform);
     if (view === "report" && report) {
       return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "popup-container", children: [
         /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "popup-header", children: [
@@ -25012,6 +25032,10 @@
           /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dot" }),
           statusLabels[state.status]
         ] }),
+        state.platform && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { fontSize: "11px", color: "#777", marginTop: "4px" }, children: [
+          "Platform: ",
+          platformLabel
+        ] }),
         state.meetingSessionId && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { fontSize: "11px", color: "#999", marginTop: "4px" }, children: [
           "Session: ",
           state.meetingSessionId.slice(0, 8),
@@ -25032,7 +25056,7 @@
           /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-primary", onClick: handleUnmute, children: "Resume Prompts" }),
           /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-danger", onClick: handleStopCoaching, children: "Stop Coaching" })
         ] }),
-        state.status === "off" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { style: { fontSize: "13px", color: "#6b6b80", textAlign: "center" }, children: "Join a Google Meet call to start coaching" }),
+        state.status === "off" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { style: { fontSize: "13px", color: "#6b6b80", textAlign: "center" }, children: "Join a supported Google Meet, Teams, or Zoom web meeting to start coaching" }),
         state.status === "error" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { style: { fontSize: "13px", color: "#cc0000", textAlign: "center" }, children: "Connection error. Please try again." })
       ] }) }),
       state.authenticated && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { textAlign: "center", marginTop: "12px" }, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
