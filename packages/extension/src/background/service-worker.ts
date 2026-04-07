@@ -358,41 +358,20 @@ function ensureOffscreenDocument(): Promise<void> {
   });
 }
 
-/** Start mic + tab audio capture via offscreen document */
+/** Start user-only audio capture via offscreen document */
 function handleStartAudioCapture(meetingSessionId: string): void {
   const token = getSessionToken();
   const apiBase = 'https://gleameet.onrender.com';
 
   ensureOffscreenDocument().then(() => {
-    // Start mic capture
+    // Start microphone capture only.
+    // Shared tab audio includes other participants and must not drive coaching.
     chrome.runtime.sendMessage({
       type: 'START_MIC_CAPTURE',
       meetingSessionId,
       sessionToken: token,
       apiBase,
     }).catch(() => {});
-
-    // Start tab capture — get the active meeting tab and capture its audio
-    getPreferredMeetingTab((tab) => {
-      if (!tab?.id) return;
-
-      (chrome.tabCapture as any).getMediaStreamId(
-        { targetTabId: tab.id },
-        (streamId: string) => {
-          if (chrome.runtime.lastError || !streamId) {
-            console.warn('[GleaMeet] tabCapture.getMediaStreamId failed:', chrome.runtime.lastError?.message);
-            return;
-          }
-          chrome.runtime.sendMessage({
-            type: 'START_TAB_CAPTURE',
-            meetingSessionId,
-            sessionToken: token,
-            apiBase,
-            streamId,
-          }).catch(() => {});
-        }
-      );
-    });
   });
 }
 

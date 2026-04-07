@@ -381,26 +381,6 @@ function handleStartAudioCapture(meetingSessionId) {
       apiBase
     }).catch(() => {
     });
-    getPreferredMeetingTab((tab) => {
-      if (!tab?.id) return;
-      chrome.tabCapture.getMediaStreamId(
-        { targetTabId: tab.id },
-        (streamId) => {
-          if (chrome.runtime.lastError || !streamId) {
-            console.warn("[GleaMeet] tabCapture.getMediaStreamId failed:", chrome.runtime.lastError?.message);
-            return;
-          }
-          chrome.runtime.sendMessage({
-            type: "START_TAB_CAPTURE",
-            meetingSessionId,
-            sessionToken: token,
-            apiBase,
-            streamId
-          }).catch(() => {
-          });
-        }
-      );
-    });
   });
 }
 function broadcastStatus() {
@@ -423,12 +403,6 @@ function broadcastPrompt(prompt) {
         });
       }
     }
-  });
-}
-function getPreferredMeetingTab(callback) {
-  chrome.tabs.query({ url: [...MEETING_TAB_URL_PATTERNS] }, (tabs) => {
-    const preferredTab = tabs.find((tab) => tab.active) ?? tabs[0];
-    callback(preferredTab);
   });
 }
 async function resolveActiveMeetingPlatform(platformHint) {

@@ -87,7 +87,7 @@ flowchart LR
 |-----------|--------|------|
 | **Content Script** | `packages/extension/src/content/content-script.ts` | Platform-aware meeting detection, DOM/mic signal capture, prompt overlay rendering |
 | **Service Worker** | `packages/extension/src/background/service-worker.ts` | Session management, platform propagation, prompt routing, event batching, tab audio orchestration |
-| **Offscreen Document** | `packages/extension/public/offscreen.html` + `src/offscreen.ts` | MV3-compatible tab audio capture via `getUserMedia` with `chromeMediaSource: "tab"` |
+| **Offscreen Document** | `packages/extension/public/offscreen.html` + `src/offscreen.ts` | MV3-compatible microphone capture isolated from the meeting page |
 | **Popup** | `packages/extension/src/popup/Popup.tsx` | Auth UI, coaching status, meeting history, post-meeting reports |
 | **API Client** | `packages/extension/src/utils/api-client.ts` | HTTP wrapper for all backend endpoints |
 
@@ -389,3 +389,4 @@ Credentials enabled for all allowed origins.
 | v1.0.21 | 2026-03-25 | Pause/resume coaching mid-meeting (`STOP_COACHING` pauses, `RESUME_COACHING` restarts, `END_MEETING` terminates + report) |
 | v1.0.22 | 2026-03-25 | Widen popup, fix text overflow in history and report views |
 | v1.0.23 | 2026-04-05 | Stabilize Teams/Zoom web support: explicit platform propagation, broader prompt/tab routing, and platform-aware capability handling for non-Meet web clients |
+t web clients |
