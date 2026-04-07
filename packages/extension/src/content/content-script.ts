@@ -493,17 +493,8 @@ function checkSpeechState(element: HTMLElement): void {
     emitEvent('speech_ended', { speaker: 'user', offset_ms: now }, 0.7);
   }
 
-  // Detect turn changes (other participant starts speaking)
-  if (isSpeakingIndicator && !isSelfView) {
-    if (state.userSpeaking) {
-      // User was speaking, now someone else is — turn change
-      emitEvent('turn_change', {
-        from_speaker: 'user',
-        to_speaker: 'other',
-        gap_ms: 0,
-      }, 0.5);
-    }
-  }
+  // Ignore non-user speaking indicators here.
+  // Coaching should be driven only by the user's own signals.
 }
 
 /** Emit a normalized event to the background service worker */

@@ -101,9 +101,9 @@ The extension uses a small capability model keyed by platform (`google_meet`, `t
 
 | Platform | URL Match | Signal Strategy |
 |----------|-----------|-----------------|
-| **Google Meet** | `meet.google.com` | Full DOM speech detection + caption observation + mic/tab audio |
-| **Microsoft Teams** | `teams.microsoft.com`, `teams.live.com` | URL/UI-based meeting detection with end debounce; mic speech detection + mic/tab audio; no Meet-style DOM captions/speaker inference |
-| **Zoom** | `zoom.us/wc`, `app.zoom.us/wc` | URL/UI-based meeting detection with ended-screen filtering; mic speech detection + mic/tab audio; no Meet-style DOM captions/speaker inference |
+| **Google Meet** | `meet.google.com` | User-scoped DOM speech/caption observation + user-specific mic/speech signals |
+| **Microsoft Teams** | `teams.microsoft.com`, `teams.live.com` | URL/UI-based meeting detection with end debounce; mic speech detection only; no Meet-style DOM captions/speaker inference |
+| **Zoom** | `zoom.us/wc`, `app.zoom.us/wc` | URL/UI-based meeting detection with ended-screen filtering; mic speech detection only; no Meet-style DOM captions/speaker inference |
 
 ### Platform Propagation
 
@@ -390,3 +390,5 @@ Credentials enabled for all allowed origins.
 | v1.0.22 | 2026-03-25 | Widen popup, fix text overflow in history and report views |
 | v1.0.23 | 2026-04-05 | Stabilize Teams/Zoom web support: explicit platform propagation, broader prompt/tab routing, and platform-aware capability handling for non-Meet web clients |
 t web clients |
+ients |
+ts |
