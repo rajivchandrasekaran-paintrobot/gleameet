@@ -96,10 +96,14 @@ function detectMeeting(): boolean {
                       url.includes('/calling') ||
                       url.includes('launcher.html') ||
                       url.includes('/l/meetup-join') ||
+                      url.includes('/light-meetings/launch') ||
+                      url.includes('lightExperience=true') ||
+                      url.includes('anon=true') ||
                       url.includes('type=meet') ||
                       decodedUrl.includes('/meet/') ||     // encoded meet URLs
                       decodedUrl.includes('/_#/meet') ||   // encoded hash URLs
-                      decodedUrl.includes('/callingv2');
+                      decodedUrl.includes('/callingv2') ||
+                      decodedUrl.includes('/light-meetings/launch');
 
     const endedUi =
       !!document.querySelector('[data-tid="call-ended-screen"]') ||

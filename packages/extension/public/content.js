@@ -105,9 +105,9 @@
     }
     if (platform === "teams") {
       const decodedUrl = decodeURIComponent(url);
-      const inCallUrl = url.includes("/callingv2") || url.includes("/meet/") || url.includes("/_#/callingv2") || url.includes("/calling") || url.includes("launcher.html") || url.includes("/l/meetup-join") || url.includes("type=meet") || decodedUrl.includes("/meet/") || // encoded meet URLs
+      const inCallUrl = url.includes("/callingv2") || url.includes("/meet/") || url.includes("/_#/callingv2") || url.includes("/calling") || url.includes("launcher.html") || url.includes("/l/meetup-join") || url.includes("/light-meetings/launch") || url.includes("lightExperience=true") || url.includes("anon=true") || url.includes("type=meet") || decodedUrl.includes("/meet/") || // encoded meet URLs
       decodedUrl.includes("/_#/meet") || // encoded hash URLs
-      decodedUrl.includes("/callingv2");
+      decodedUrl.includes("/callingv2") || decodedUrl.includes("/light-meetings/launch");
       const endedUi = !!document.querySelector('[data-tid="call-ended-screen"]') || /meeting has ended|call ended|you left the meeting/i.test(document.body.textContent || "");
       const hasCallUi = !!document.querySelector('[data-tid="calling-screen"]') || !!document.querySelector('[data-tid="hangup-btn"]') || !!document.querySelector('[data-tid="toggle-mute"]') || !!document.querySelector('[data-tid="toggle-video"]') || !!document.querySelector('[data-tid="prejoin-join-button"]') || !!document.querySelector('button[aria-label*="Leave"]') || !!document.querySelector('button[aria-label*="leave"]') || !!document.querySelector('[class*="calling"]') || !!document.querySelector('[id*="calling"]');
       const titleLooksMeetingLike = document.title.toLowerCase().includes("meeting") || document.title.toLowerCase().includes("call");

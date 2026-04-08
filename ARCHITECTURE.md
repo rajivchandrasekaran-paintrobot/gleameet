@@ -102,7 +102,7 @@ The extension uses a small capability model keyed by platform (`google_meet`, `t
 | Platform | URL Match | Signal Strategy |
 |----------|-----------|-----------------|
 | **Google Meet** | `meet.google.com` | User-scoped DOM speech/caption observation + user-specific mic/speech signals |
-| **Microsoft Teams** | `teams.microsoft.com`, `teams.live.com` | URL/UI-based meeting detection with end debounce; mic speech detection only; no Meet-style DOM captions/speaker inference |
+| **Microsoft Teams** | `teams.microsoft.com`, `teams.live.com` | URL/UI-based meeting detection with end debounce, including `light-meetings/launch`; mic speech detection only; no Meet-style DOM captions/speaker inference |
 | **Zoom** | `zoom.us/wc`, `app.zoom.us/wc` | URL/UI-based meeting detection with ended-screen filtering; mic speech detection only; no Meet-style DOM captions/speaker inference |
 
 ### Platform Propagation
