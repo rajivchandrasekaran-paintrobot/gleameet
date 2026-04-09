@@ -38,6 +38,7 @@ function createState(overrides: Partial<MeetingState> = {}): MeetingState {
     user_is_speaking: false,
     prompts_shown_count: 0,
     last_prompt_shown_at: null,
+    last_reinforcement_behavior_count: 0,
     events_ingested: 10,
     hedging_hits: 0,
     certainty_hits: 0,
@@ -55,6 +56,7 @@ function createState(overrides: Partial<MeetingState> = {}): MeetingState {
     shared_goal_language_present: false,
     law_trigger_ids: [],
     prompt_ids: [],
+    recent_transcript: [],
     ...overrides,
   };
 }

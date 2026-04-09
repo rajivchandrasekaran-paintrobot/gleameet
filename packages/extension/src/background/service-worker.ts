@@ -146,6 +146,10 @@ async function handleMessage(message: any): Promise<any> {
       chrome.runtime.sendMessage({ type: 'STOP_TAB_CAPTURE' }).catch(() => {});
       return { ok: true };
 
+    case 'AUDIO_TRANSCRIPT_RESULT':
+      broadcastAudioTranscript(message);
+      return { ok: true };
+
     default:
       return { error: 'Unknown message type' };
   }
@@ -364,14 +368,31 @@ function handleStartAudioCapture(meetingSessionId: string): void {
   const apiBase = 'https://gleameet.onrender.com';
 
   ensureOffscreenDocument().then(() => {
-    // Start microphone capture only.
-    // Shared tab audio includes other participants and must not drive coaching.
     chrome.runtime.sendMessage({
       type: 'START_MIC_CAPTURE',
       meetingSessionId,
       sessionToken: token,
       apiBase,
     }).catch(() => {});
+
+    getPreferredMeetingTab((tab) => {
+      if (!tab?.id) return;
+
+      chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id }, (streamId) => {
+        if (chrome.runtime.lastError || !streamId) {
+          console.warn('[GleaMeet] Tab capture unavailable:', chrome.runtime.lastError?.message || 'missing stream id');
+          return;
+        }
+
+        chrome.runtime.sendMessage({
+          type: 'START_TAB_CAPTURE',
+          meetingSessionId,
+          sessionToken: token,
+          apiBase,
+          streamId,
+        }).catch(() => {});
+      });
+    });
   });
 }
 
@@ -393,6 +414,31 @@ function broadcastPrompt(prompt: PromptEvent): void {
         chrome.tabs.sendMessage(tab.id, {
           type: 'SHOW_PROMPT',
           prompt,
+        }).catch(() => {});
+      }
+    }
+  });
+}
+
+function broadcastAudioTranscript(message: {
+  text?: string;
+  stream?: 'mic' | 'tab';
+  startOffsetMs?: number;
+  endOffsetMs?: number;
+  eventTimeMs?: number;
+}): void {
+  if (!message.text || !message.stream) return;
+
+  chrome.tabs.query({ url: [...MEETING_TAB_URL_PATTERNS] }, (tabs) => {
+    for (const tab of tabs) {
+      if (tab.id) {
+        chrome.tabs.sendMessage(tab.id, {
+          type: 'AUDIO_TRANSCRIPT_RESULT',
+          text: message.text,
+          stream: message.stream,
+          startOffsetMs: message.startOffsetMs,
+          endOffsetMs: message.endOffsetMs,
+          eventTimeMs: message.eventTimeMs,
         }).catch(() => {});
       }
     }

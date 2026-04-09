@@ -173,7 +173,7 @@ describe('API Routes', () => {
         summary_or_recap_count: 0, acknowledgment_count: 0,
         last_speech_start_ms: null, last_turn_change_ms: null,
         user_is_speaking: false, prompts_shown_count: 0,
-        last_prompt_shown_at: null, events_ingested: 0,
+        last_prompt_shown_at: null, last_reinforcement_behavior_count: 0, events_ingested: 0,
         hedging_hits: 0, certainty_hits: 0, loss_frame_hits: 0,
         gain_frame_hits: 0, action_specificity_hits: 0,
         transcript_segment_count: 0, disagreement_detected: false,
@@ -181,7 +181,7 @@ describe('API Routes', () => {
         owner_assignment_present: false, deadline_present: false,
         evidence_reference_present: false, peer_example_present: false,
         shared_goal_language_present: false,
-        law_trigger_ids: [], prompt_ids: [],
+        law_trigger_ids: [], prompt_ids: [], recent_transcript: [],
       });
 
       const res = await request(app)

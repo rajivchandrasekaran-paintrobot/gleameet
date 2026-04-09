@@ -31,11 +31,24 @@ export function validateRawEvent(event: Partial<RawEvent>): { valid: boolean; er
 }
 
 /** Payload type for transcript_segment events */
+export type TranscriptSource = 'mic' | 'tab' | 'caption' | 'web_speech';
+
+export interface TranscriptAttribution {
+  source: TranscriptSource;
+  candidate_speaker: 'user' | 'other';
+  final_speaker: 'user' | 'other';
+  passes_user_attribution: boolean;
+  reason?: 'self_declared' | 'non_user_context' | 'overlap_with_recent_non_user_context';
+  overlap_score?: number;
+  matched_source?: TranscriptSource;
+}
+
 export interface TranscriptPayload {
   text: string;
   speaker: 'user' | 'other';
   start_offset_ms: number;
   end_offset_ms: number;
+  attribution?: TranscriptAttribution;
 }
 
 /** Payload type for speech timing events */

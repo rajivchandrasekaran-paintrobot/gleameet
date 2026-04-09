@@ -21,6 +21,7 @@ function createMeetingState(overrides: Partial<MeetingState> = {}): MeetingState
     user_is_speaking: false,
     prompts_shown_count: 0,
     last_prompt_shown_at: null,
+    last_reinforcement_behavior_count: 0,
     events_ingested: 0,
     hedging_hits: 0,
     certainty_hits: 0,
@@ -38,11 +39,16 @@ function createMeetingState(overrides: Partial<MeetingState> = {}): MeetingState
     shared_goal_language_present: false,
     law_trigger_ids: [],
     prompt_ids: [],
+    recent_transcript: [],
     ...overrides,
   };
 }
 
-function makeTranscriptEvent(text: string, time?: string): RawEvent {
+function makeTranscriptEvent(
+  text: string,
+  time?: string,
+  overrides: Partial<RawEvent['payload']> = {}
+): RawEvent {
   return {
     event_id: `evt-${Math.random().toString(36).slice(2)}`,
     meeting_session_id: 'test-session',
@@ -52,7 +58,7 @@ function makeTranscriptEvent(text: string, time?: string): RawEvent {
     event_time_utc: time || new Date().toISOString(),
     source: 'extension',
     capture_confidence: 0.9,
-    payload: { text, speaker: 'user', start_offset_ms: 0, end_offset_ms: 100 },
+    payload: { text, speaker: 'user', start_offset_ms: 0, end_offset_ms: 100, ...overrides },
   };
 }
 
@@ -270,6 +276,61 @@ describe('Feature Engine - Linguistic Classifiers', () => {
       ];
       await processEvents(events, state);
       expect(state.summary_or_recap_count).toBe(2);
+    });
+  });
+
+  describe('attribution gating', () => {
+    test('does not increment user features for suppressed candidate-user speech', async () => {
+      const state = createMeetingState();
+      const events = [
+        makeTranscriptEvent('We should push the launch to next week', undefined, {
+          speaker: 'other',
+          attribution: {
+            candidate_speaker: 'other',
+            final_speaker: 'other',
+            passes_user_attribution: false,
+            source: 'tab',
+            reason: 'non_user_context',
+          },
+        }),
+        makeTranscriptEvent('We should push the launch to next week', undefined, {
+          speaker: 'user',
+          attribution: {
+            candidate_speaker: 'user',
+            final_speaker: 'other',
+            passes_user_attribution: false,
+            source: 'mic',
+            reason: 'overlap_with_recent_non_user_context',
+            matched_source: 'tab',
+            overlap_score: 0.95,
+          },
+        }),
+      ];
+
+      const features = await processEvents(events, state);
+
+      expect(state.transcript_segment_count).toBe(0);
+      expect(state.recent_transcript[state.recent_transcript.length - 1]?.speaker).toBe('other');
+      expect(features.question_count).toBe(0);
+    });
+
+    test('increments user features for attributed user speech', async () => {
+      const state = createMeetingState();
+      const events = [
+        makeTranscriptEvent('Could you clarify the tradeoff here?', undefined, {
+          attribution: {
+            candidate_speaker: 'user',
+            final_speaker: 'user',
+            passes_user_attribution: true,
+            source: 'mic',
+            reason: 'self_declared',
+          },
+        }),
+      ];
+
+      await processEvents(events, state);
+      expect(state.transcript_segment_count).toBe(1);
+      expect(state.question_count).toBe(1);
     });
   });
 });

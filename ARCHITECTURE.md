@@ -1,6 +1,6 @@
 # GleaMeet Architecture
 
-> **Last updated:** 2026-04-05 (web support stabilization)
+> **Last updated:** 2026-04-09 (transcript attribution model)
 
 GleaMeet is a real-time AI meeting coach delivered as a Chrome extension backed by a Node.js API server. It observes meeting signals (speech, captions, behavioral cues), evaluates them against 12 behavioral laws from Cialdini, Kahneman, and Thaler, and delivers personalized nudges via GPT-4o during the call. After the meeting, it generates a detailed coaching report.
 
@@ -55,12 +55,10 @@ flowchart LR
     E -->|prompt event| F[Redis<br/>Prompt Queue]
     F -->|GET /prompts/poll| G[Extension<br/>Overlay Shown]
 
-    H[Mic Audio<br/>Content Script<br/>getUserMedia] -->|10s WebM chunks| I[POST /audio/transcribe]
-    I -->|Whisper<br/>noise filter + en| J[Transcript Segments]
-    J --> C
-
     B -->|getMediaStreamId| K[Offscreen Doc<br/>offscreen.html]
-    K -->|10s WebM chunks<br/>tab audio| I
+    K -->|10s WebM chunks<br/>mic + tab audio| I[POST /audio/transcribe]
+    I -->|Whisper<br/>noise filter + en| J[Attributed Transcript Segments]
+    J --> C
 ```
 
 ### Pipeline Stages
@@ -87,7 +85,7 @@ flowchart LR
 |-----------|--------|------|
 | **Content Script** | `packages/extension/src/content/content-script.ts` | Platform-aware meeting detection, DOM/mic signal capture, prompt overlay rendering |
 | **Service Worker** | `packages/extension/src/background/service-worker.ts` | Session management, platform propagation, prompt routing, event batching, tab audio orchestration |
-| **Offscreen Document** | `packages/extension/public/offscreen.html` + `src/offscreen.ts` | MV3-compatible microphone capture isolated from the meeting page |
+| **Offscreen Document** | `packages/extension/public/offscreen.html` + `src/offscreen.ts` | MV3-compatible mic + tab audio capture isolated from the meeting page |
 | **Popup** | `packages/extension/src/popup/Popup.tsx` | Auth UI, coaching status, meeting history, post-meeting reports |
 | **API Client** | `packages/extension/src/utils/api-client.ts` | HTTP wrapper for all backend endpoints |
 
@@ -111,6 +109,14 @@ The extension uses a small capability model keyed by platform (`google_meet`, `t
 - `START_COACHING` resolves the active supported web tab and starts the backend meeting session with that platform instead of defaulting to `google_meet`.
 - Raw events emitted from the content script carry the current platform explicitly.
 - `STATUS_UPDATE`, `COACHING_STARTED`, prompt delivery, and prompt dismissal are broadcast across all supported web meeting tabs rather than Google Meet only.
+- `AUDIO_TRANSCRIPT_RESULT` is broadcast back into the meeting tab so transcript attribution can happen before event ingestion.
+
+### Transcript Attribution Model
+
+- Full-meeting transcript context is preserved. Non-user transcript context from tab audio and DOM captions is kept in the transcript history and recent-context buffer.
+- Each `transcript_segment` now carries attribution metadata: source (`mic`, `tab`, `caption`, `web_speech`), candidate speaker, final speaker, whether it passed user attribution, and overlap evidence when suppression occurred.
+- Candidate self/user transcripts are compared against a short rolling buffer of recent non-user transcript context. If a candidate strongly overlaps recent non-user captions/tab audio, it is reclassified as `other` with reason `overlap_with_recent_non_user_context`.
+- Coaching remains user-only because only segments that still pass attribution are allowed to increment user-triggering features.
 
 ### Coaching Lifecycle Messages
 
@@ -196,7 +202,7 @@ Each law definition includes: `trigger_logic` (conditions on features), `disconf
 | **Whisper-1** | OpenAI | Audio transcription (mic capture) |
 | **Ollama (llama3.2)** | Local fallback | Development/offline mode |
 
-**Coaching scope:** All GPT-4o prompts (nudge personalization, reinforcement, report narratives) explicitly coach only the user ("YOU"). Other participants ("THEM") appear in transcript context but are never critiqued, praised, or referenced by name. The Feature Engine's `analyzeTranscriptText` only processes user-speaker segments; other-speaker text contributes only to timing metrics.
+**Coaching scope:** All GPT-4o prompts (nudge personalization, reinforcement, report narratives) explicitly coach only the user ("YOU"). Other participants ("THEM") appear in transcript context but are never critiqued, praised, or referenced by name. The Feature Engine's `analyzeTranscriptText` only processes user segments that passed attribution; other-speaker text and suppressed candidate-user text contribute only to context/timing.
 
 **Nudge personalization:** Recent transcript (last 5 segments) + feature snapshot → JSON output with `short_text` (≤25 words) and `rationale_text` (≤20 words). Temperature 0.7, 6-second timeout with static template fallback.
 
@@ -206,13 +212,13 @@ Each law definition includes: `trigger_logic` (conditions on features), `disconf
 
 ## Audio Capture & Transcription
 
-Two audio streams are captured simultaneously:
+Two audio streams are captured simultaneously via the offscreen document:
 
-### Mic Audio (Content Script)
+### Mic Audio (Offscreen Document — MV3)
 
-1. Content script calls `navigator.mediaDevices.getUserMedia({ audio: true })` to capture the user's microphone.
-2. Audio is recorded in 10-second WebM chunks via `MediaRecorder`.
-3. Each chunk is `POST`ed to `/audio/transcribe` as multipart form data (≤25 MB, stream type `mic`).
+1. Service worker ensures `offscreen.html` is active.
+2. Offscreen doc calls `navigator.mediaDevices.getUserMedia({ audio })` to capture microphone audio without altering the meeting tab's routing.
+3. Audio is recorded in 10-second WebM chunks and sent to `/audio/transcribe` as stream type `mic`.
 
 ### Tab Audio (Offscreen Document — MV3)
 
@@ -221,6 +227,7 @@ Two audio streams are captured simultaneously:
 3. Service worker sends `START_TAB_CAPTURE` message to offscreen doc with `streamId`, `sessionToken`, and `apiBase`.
 4. Offscreen doc calls `navigator.mediaDevices.getUserMedia()` with `chromeMediaSource: "tab"` and the provided stream ID.
 5. Records 10-second WebM chunks; skips chunks <1 KB. Sends to `/audio/transcribe` (stream type `tab`).
+6. Both mic and tab transcription results are posted back into the meeting tab as `AUDIO_TRANSCRIPT_RESULT` messages for attribution.
 
 ### Backend Transcription & Noise Filtering
 
@@ -231,11 +238,11 @@ The `/audio/transcribe` endpoint proxies to OpenAI Whisper-1 with `language: "en
 - **Non-ASCII ratio:** Rejects if >30% of characters are non-ASCII (garbled Whisper output)
 - Returns empty string on invalid transcript
 
-Transcript segments are fed into the Feature Engine for linguistic analysis.
+Transcript segments are fed into the Feature Engine with attribution metadata. Full transcript history is retained, but only user/candidate-user segments that still have `passes_user_attribution=true` can drive user coaching features.
 
 ### Signal Priority
 
-When Whisper is active (`whisperActive` flag), the content script suppresses Web Speech API transcripts and DOM caption observation to prevent duplicate signals. DOM captions remain available as a low-confidence (0.3) fallback when Whisper is inactive.
+When Whisper is active (`whisperActive` flag), the content script suppresses Web Speech API final transcripts to avoid duplicate self transcripts, but keeps DOM captions and tab-audio transcripts available as non-user context. That context is what powers overlap-based suppression for leaked speaker audio.
 
 ---
 

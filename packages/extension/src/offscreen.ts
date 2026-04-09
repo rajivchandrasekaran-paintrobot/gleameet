@@ -96,12 +96,16 @@ chrome.runtime.onMessage.addListener(async (message) => {
 function startRecording(stream: MediaStream, streamType: string, meetingSessionId: string, sessionToken: string, apiBase: string): { recorder: MediaRecorder; interval: ReturnType<typeof setInterval> } {
   const recorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
   let chunks: Blob[] = [];
+  let chunkStartedAt = Date.now();
 
   recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
 
   recorder.onstop = async () => {
     const blob = new Blob(chunks, { type: "audio/webm" });
+    const chunkEndedAt = Date.now();
+    const chunkStart = chunkStartedAt;
     chunks = [];
+    chunkStartedAt = Date.now();
     if (blob.size < 1000) return;
 
     const form = new FormData();
@@ -109,10 +113,24 @@ function startRecording(stream: MediaStream, streamType: string, meetingSessionI
     form.append("stream", streamType);
     form.append("meeting_session_id", meetingSessionId);
 
-    await fetch(`${apiBase}/audio/transcribe`, {
+    const response = await fetch(`${apiBase}/audio/transcribe`, {
       method: "POST",
       headers: { Authorization: `Bearer ${sessionToken}` },
       body: form,
+    }).catch(() => null);
+
+    if (!response?.ok) return;
+
+    const result = await response.json().catch(() => null);
+    if (!result?.text) return;
+
+    chrome.runtime.sendMessage({
+      type: "AUDIO_TRANSCRIPT_RESULT",
+      text: result.text,
+      stream: streamType,
+      startOffsetMs: chunkStart,
+      endOffsetMs: chunkEndedAt,
+      eventTimeMs: chunkEndedAt,
     }).catch(() => {});
   };
 

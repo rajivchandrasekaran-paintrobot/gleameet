@@ -9,7 +9,8 @@
 
 import { createEvent } from '../utils/event-factory';
 import { detectPlatformFromUrl, getPlatformCapabilities } from '../utils/platform';
-import type { Platform, PromptEvent } from '@gleameet/shared';
+import { TranscriptAttributionTracker } from '../utils/transcript-attribution';
+import type { Platform, PromptEvent, TranscriptSource } from '@gleameet/shared';
 
 /** Session context maintained by the content script */
 interface ContentState {
@@ -63,6 +64,7 @@ const CAPTION_SELECTORS = [
 
 // Throttle speech events to avoid flooding (max one per 500ms)
 const SPEECH_THROTTLE_MS = 500;
+const transcriptAttribution = new TranscriptAttributionTracker();
 
 // --- Meeting Detection (FR-005, FR-006) ---
 
@@ -368,13 +370,7 @@ function startMicrophoneDetection(): void {
         if (!text) continue;
 
         if (result.isFinal && !whisperActive) {
-          // Only emit from Web Speech API if Whisper isn't active (avoid duplicates/noise)
-          emitEvent('transcript_segment', {
-            text,
-            speaker: 'user',
-            start_offset_ms: Date.now(),
-            end_offset_ms: Date.now(),
-          }, 0.9);
+          emitTranscriptSegment(text, 'user', 'web_speech', 0.9);
         }
       }
     };
@@ -446,16 +442,8 @@ function observeCaptions(): void {
                      !!el.closest('[data-is-self="true"]');
       const speaker = isSelf ? 'user' : 'other';
 
-      // Skip all DOM captions when Whisper is active — tab audio capture handles both speakers
-      if (whisperActive) continue;
-
       console.log(`[GleaMeet] Caption captured (${speaker}): ${text.slice(0, 80)}`);
-      emitEvent('transcript_segment', {
-        text,
-        speaker,
-        start_offset_ms: Date.now(),
-        end_offset_ms: Date.now(),
-      }, 0.3);
+      emitTranscriptSegment(text, speaker, 'caption', 0.3);
     }
   });
 
@@ -521,6 +509,30 @@ function emitEvent(
   );
 
   chrome.runtime.sendMessage({ type: 'INGEST_EVENT', event }).catch(() => {});
+}
+
+function emitTranscriptSegment(
+  text: string,
+  candidateSpeaker: 'user' | 'other',
+  source: TranscriptSource,
+  captureConfidence: number | null,
+  timing?: { startOffsetMs?: number; endOffsetMs?: number; eventTimeMs?: number }
+): void {
+  const eventTimeMs = timing?.eventTimeMs ?? Date.now();
+  const endOffsetMs = timing?.endOffsetMs ?? eventTimeMs;
+  const startOffsetMs = timing?.startOffsetMs ?? endOffsetMs;
+
+  const payload = transcriptAttribution.classifySegment({
+    text,
+    source,
+    candidateSpeaker,
+    timestampMs: eventTimeMs,
+    startOffsetMs,
+    endOffsetMs,
+  });
+
+  if (!payload) return;
+  emitEvent('transcript_segment', payload as unknown as Record<string, unknown>, captureConfidence);
 }
 
 // Whisper active flag — when true, suppress Web Speech API transcripts
@@ -707,6 +719,24 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     case 'WHISPER_ACTIVE':
       whisperActive = true;
       break;
+
+    case 'AUDIO_TRANSCRIPT_RESULT': {
+      whisperActive = true;
+      const stream = message.stream as 'mic' | 'tab';
+      const candidateSpeaker = stream === 'mic' ? 'user' : 'other';
+      emitTranscriptSegment(
+        message.text || '',
+        candidateSpeaker,
+        stream,
+        stream === 'mic' ? 0.85 : 0.75,
+        {
+          startOffsetMs: message.startOffsetMs,
+          endOffsetMs: message.endOffsetMs,
+          eventTimeMs: message.eventTimeMs,
+        }
+      );
+      break;
+    }
 
     case 'DISMISS_ALL_PROMPTS':
       dismissCurrentPrompt();

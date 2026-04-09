@@ -201,6 +201,9 @@ async function handleMessage(message) {
       chrome.runtime.sendMessage({ type: "STOP_TAB_CAPTURE" }).catch(() => {
       });
       return { ok: true };
+    case "AUDIO_TRANSCRIPT_RESULT":
+      broadcastAudioTranscript(message);
+      return { ok: true };
     default:
       return { error: "Unknown message type" };
   }
@@ -381,6 +384,23 @@ function handleStartAudioCapture(meetingSessionId) {
       apiBase
     }).catch(() => {
     });
+    getPreferredMeetingTab((tab) => {
+      if (!tab?.id) return;
+      chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id }, (streamId) => {
+        if (chrome.runtime.lastError || !streamId) {
+          console.warn("[GleaMeet] Tab capture unavailable:", chrome.runtime.lastError?.message || "missing stream id");
+          return;
+        }
+        chrome.runtime.sendMessage({
+          type: "START_TAB_CAPTURE",
+          meetingSessionId,
+          sessionToken: token,
+          apiBase,
+          streamId
+        }).catch(() => {
+        });
+      });
+    });
   });
 }
 function broadcastStatus() {
@@ -403,6 +423,30 @@ function broadcastPrompt(prompt) {
         });
       }
     }
+  });
+}
+function broadcastAudioTranscript(message) {
+  if (!message.text || !message.stream) return;
+  chrome.tabs.query({ url: [...MEETING_TAB_URL_PATTERNS] }, (tabs) => {
+    for (const tab of tabs) {
+      if (tab.id) {
+        chrome.tabs.sendMessage(tab.id, {
+          type: "AUDIO_TRANSCRIPT_RESULT",
+          text: message.text,
+          stream: message.stream,
+          startOffsetMs: message.startOffsetMs,
+          endOffsetMs: message.endOffsetMs,
+          eventTimeMs: message.eventTimeMs
+        }).catch(() => {
+        });
+      }
+    }
+  });
+}
+function getPreferredMeetingTab(callback) {
+  chrome.tabs.query({ url: [...MEETING_TAB_URL_PATTERNS] }, (tabs) => {
+    const preferredTab = tabs.find((tab) => tab.active) ?? tabs[0];
+    callback(preferredTab);
   });
 }
 async function resolveActiveMeetingPlatform(platformHint) {

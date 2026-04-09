@@ -56,6 +56,114 @@
     }
   }
 
+  // src/utils/transcript-attribution.ts
+  var RECENT_CONTEXT_WINDOW_MS = 15e3;
+  var MAX_CONTEXT_ENTRIES = 20;
+  var MIN_OVERLAP_TOKENS = 4;
+  var STRONG_OVERLAP_SCORE = 0.72;
+  function normalizeText(text) {
+    return text.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+  }
+  function tokenize(text) {
+    return normalizeText(text).split(" ").filter((token) => token.length >= 2);
+  }
+  function computeOverlapScore(a, b) {
+    const normalizedA = normalizeText(a);
+    const normalizedB = normalizeText(b);
+    if (!normalizedA || !normalizedB) return 0;
+    if (normalizedA === normalizedB) return 1;
+    if (normalizedA.length >= 12 && normalizedB.includes(normalizedA)) return 0.95;
+    if (normalizedB.length >= 12 && normalizedA.includes(normalizedB)) return 0.95;
+    const tokensA = tokenize(a);
+    const tokensB = tokenize(b);
+    if (tokensA.length === 0 || tokensB.length === 0) return 0;
+    const setA = new Set(tokensA);
+    const setB = new Set(tokensB);
+    let shared = 0;
+    for (const token of setA) {
+      if (setB.has(token)) shared++;
+    }
+    if (shared < Math.min(MIN_OVERLAP_TOKENS, setA.size, setB.size)) return 0;
+    return shared / Math.max(Math.min(setA.size, setB.size), 1);
+  }
+  var TranscriptAttributionTracker = class {
+    recentContext = [];
+    classifySegment(params) {
+      const text = params.text.trim();
+      if (!text) return null;
+      this.pruneContext(params.timestampMs);
+      const attribution = this.buildAttribution(params);
+      const payload = {
+        text,
+        speaker: attribution.final_speaker,
+        start_offset_ms: params.startOffsetMs,
+        end_offset_ms: params.endOffsetMs,
+        attribution
+      };
+      this.rememberContext({
+        speaker: payload.speaker,
+        source: params.source,
+        text,
+        ts: params.timestampMs
+      });
+      return payload;
+    }
+    buildAttribution(params) {
+      if (params.candidateSpeaker === "other") {
+        return {
+          source: params.source,
+          candidate_speaker: "other",
+          final_speaker: "other",
+          passes_user_attribution: false,
+          reason: "non_user_context"
+        };
+      }
+      const overlapMatch = this.findBestNonUserOverlap(params.text, params.timestampMs);
+      if (overlapMatch && overlapMatch.score >= STRONG_OVERLAP_SCORE) {
+        return {
+          source: params.source,
+          candidate_speaker: "user",
+          final_speaker: "other",
+          passes_user_attribution: false,
+          reason: "overlap_with_recent_non_user_context",
+          overlap_score: Number(overlapMatch.score.toFixed(2)),
+          matched_source: overlapMatch.entry.source
+        };
+      }
+      return {
+        source: params.source,
+        candidate_speaker: "user",
+        final_speaker: "user",
+        passes_user_attribution: true,
+        reason: "self_declared"
+      };
+    }
+    findBestNonUserOverlap(text, timestampMs) {
+      let best = null;
+      for (const entry of this.recentContext) {
+        if (entry.speaker !== "other") continue;
+        if (timestampMs - entry.ts > RECENT_CONTEXT_WINDOW_MS) continue;
+        const score = computeOverlapScore(text, entry.text);
+        if (!best || score > best.score) {
+          best = { entry, score };
+        }
+      }
+      return best;
+    }
+    rememberContext(entry) {
+      this.recentContext.push(entry);
+      if (this.recentContext.length > MAX_CONTEXT_ENTRIES) {
+        this.recentContext.splice(0, this.recentContext.length - MAX_CONTEXT_ENTRIES);
+      }
+    }
+    pruneContext(timestampMs) {
+      const cutoff = timestampMs - RECENT_CONTEXT_WINDOW_MS;
+      while (this.recentContext.length > 0 && this.recentContext[0].ts < cutoff) {
+        this.recentContext.shift();
+      }
+    }
+  };
+
   // src/content/content-script.ts
   var state = {
     meetingDetected: false,
@@ -91,6 +199,7 @@
     'div[class*="iOzk7"] span'
   ];
   var SPEECH_THROTTLE_MS = 500;
+  var transcriptAttribution = new TranscriptAttributionTracker();
   function getPlatform() {
     return detectPlatformFromUrl(window.location.href);
   }
@@ -281,12 +390,7 @@
           const text = result[0].transcript.trim();
           if (!text) continue;
           if (result.isFinal && !whisperActive) {
-            emitEvent("transcript_segment", {
-              text,
-              speaker: "user",
-              start_offset_ms: Date.now(),
-              end_offset_ms: Date.now()
-            }, 0.9);
+            emitTranscriptSegment(text, "user", "web_speech", 0.9);
           }
         }
       };
@@ -348,14 +452,8 @@
         const containerText = container?.previousElementSibling?.textContent?.trim() || "";
         const isSelf = containerText === "You" || !!el.closest("[data-self-name]") || !!el.closest('[data-is-self="true"]');
         const speaker = isSelf ? "user" : "other";
-        if (whisperActive) continue;
         console.log(`[GleaMeet] Caption captured (${speaker}): ${text.slice(0, 80)}`);
-        emitEvent("transcript_segment", {
-          text,
-          speaker,
-          start_offset_ms: Date.now(),
-          end_offset_ms: Date.now()
-        }, 0.3);
+        emitTranscriptSegment(text, speaker, "caption", 0.3);
       }
     });
     state.captionObserver.observe(document.body, {
@@ -377,6 +475,21 @@
     );
     chrome.runtime.sendMessage({ type: "INGEST_EVENT", event }).catch(() => {
     });
+  }
+  function emitTranscriptSegment(text, candidateSpeaker, source, captureConfidence, timing) {
+    const eventTimeMs = timing?.eventTimeMs ?? Date.now();
+    const endOffsetMs = timing?.endOffsetMs ?? eventTimeMs;
+    const startOffsetMs = timing?.startOffsetMs ?? endOffsetMs;
+    const payload = transcriptAttribution.classifySegment({
+      text,
+      source,
+      candidateSpeaker,
+      timestampMs: eventTimeMs,
+      startOffsetMs,
+      endOffsetMs
+    });
+    if (!payload) return;
+    emitEvent("transcript_segment", payload, captureConfidence);
   }
   var whisperActive = false;
   function createOverlay() {
@@ -512,6 +625,23 @@
       case "WHISPER_ACTIVE":
         whisperActive = true;
         break;
+      case "AUDIO_TRANSCRIPT_RESULT": {
+        whisperActive = true;
+        const stream = message.stream;
+        const candidateSpeaker = stream === "mic" ? "user" : "other";
+        emitTranscriptSegment(
+          message.text || "",
+          candidateSpeaker,
+          stream,
+          stream === "mic" ? 0.85 : 0.75,
+          {
+            startOffsetMs: message.startOffsetMs,
+            endOffsetMs: message.endOffsetMs,
+            eventTimeMs: message.eventTimeMs
+          }
+        );
+        break;
+      }
       case "DISMISS_ALL_PROMPTS":
         dismissCurrentPrompt();
         break;

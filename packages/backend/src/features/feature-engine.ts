@@ -7,6 +7,15 @@ export interface FeatureSnapshot {
   [key: string]: number | boolean;
 }
 
+interface TranscriptSegmentPayload {
+  text?: string;
+  speaker?: 'user' | 'other';
+  attribution?: {
+    passes_user_attribution?: boolean;
+    final_speaker?: 'user' | 'other';
+  };
+}
+
 // --- Keyword lists for rule-based classifiers ---
 
 const HEDGING_PATTERNS = [
@@ -320,10 +329,12 @@ function updateStateFromEvent(event: RawEvent, state: MeetingState): void {
     }
 
     case 'transcript_segment': {
-      const payload = event.payload as any;
+      const payload = event.payload as TranscriptSegmentPayload;
+      const resolvedSpeaker = payload?.attribution?.final_speaker || payload?.speaker;
+      const passesUserAttribution = payload?.attribution?.passes_user_attribution !== false;
       if (payload?.text) {
         // Push to rolling transcript buffer for both speakers
-        state.recent_transcript.push({ speaker: payload.speaker, text: payload.text, ts: now });
+        state.recent_transcript.push({ speaker: resolvedSpeaker || 'other', text: payload.text, ts: now });
         if (state.recent_transcript.length > 10) state.recent_transcript.shift();
       }
       if (payload?.text) {
@@ -331,17 +342,17 @@ function updateStateFromEvent(event: RawEvent, state: MeetingState): void {
         const lastSpeaker = state.recent_transcript.length >= 2
           ? state.recent_transcript[state.recent_transcript.length - 2]?.speaker
           : null;
-        if (lastSpeaker && lastSpeaker !== payload.speaker) {
+        if (lastSpeaker && resolvedSpeaker && lastSpeaker !== resolvedSpeaker) {
           state.turn_count++;
           state.last_turn_change_ms = now;
         }
       }
-      if (payload?.speaker === 'user' && payload?.text) {
+      if (resolvedSpeaker === 'user' && payload?.text && passesUserAttribution) {
         state.transcript_segment_count++;
         state.last_speech_start_ms = now;
         state.user_is_speaking = true;
         analyzeTranscriptText(payload.text, state);
-      } else if (payload?.speaker === 'other' && payload?.text) {
+      } else if (resolvedSpeaker === 'other' && payload?.text) {
         // Analyze other speaker's text for turn context (interruptions, disagreement, etc.)
         state.other_speaking_time_total_ms += 2000; // ~2s estimate per caption segment
       }

@@ -363,6 +363,7 @@ export async function getTranscriptSegmentsForSession(
     start_offset_ms: r.payload_json.start_offset_ms || 0,
     end_offset_ms: r.payload_json.end_offset_ms || 0,
     event_time_utc: r.event_time_utc,
+    attribution: r.payload_json.attribution || undefined,
   }));
 }
 
