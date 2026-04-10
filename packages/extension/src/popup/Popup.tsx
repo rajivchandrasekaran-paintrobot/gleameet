@@ -9,6 +9,7 @@ type ReportTab = 'summary' | 'transcript-nudges';
 
 interface PopupState {
   status: SessionStatus;
+  meetingDetected: boolean;
   meetingSessionId: string | null;
   authenticated: boolean;
   userId: string | null;
@@ -62,6 +63,7 @@ function formatDate(iso: string): string {
 export const Popup: React.FC = () => {
   const [state, setState] = useState<PopupState>({
     status: 'off',
+    meetingDetected: false,
     meetingSessionId: null,
     authenticated: false,
     userId: null,
@@ -89,6 +91,7 @@ export const Popup: React.FC = () => {
         setState(prev => ({
           ...prev,
           status: response.status || 'off',
+          meetingDetected: response.meetingDetected ?? false,
           meetingSessionId: response.meetingSessionId || null,
           authenticated: isAuthenticated,
           userId: response.userId || null,
@@ -117,6 +120,7 @@ export const Popup: React.FC = () => {
         setState(prev => ({
           ...prev,
           status: message.status,
+          meetingDetected: message.meetingDetected ?? prev.meetingDetected,
           meetingSessionId: message.meetingSessionId,
           platform: message.platform || null,
         }));
@@ -335,7 +339,7 @@ export const Popup: React.FC = () => {
 
   const statusLabels: Record<SessionStatus, string> = {
     off: 'Not in a meeting',
-    ready: state.meetingSessionId ? 'Coaching paused' : 'Meeting detected',
+    ready: state.meetingSessionId ? 'Coaching paused' : (state.meetingDetected ? 'Meeting detected' : 'Ready'),
     active: 'Coaching active',
     muted: 'Coaching muted',
     error: 'Error',
@@ -615,7 +619,7 @@ export const Popup: React.FC = () => {
 
             {state.status === 'ready' && !state.meetingSessionId && (
               <button className="btn btn-primary" onClick={handleStartCoaching}>
-                Enable Coaching
+                Start Coaching
               </button>
             )}
 

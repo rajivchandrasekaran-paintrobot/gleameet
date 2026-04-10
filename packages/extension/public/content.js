@@ -264,7 +264,9 @@
     if (!platform) return;
     state.meetingDetected = true;
     state.platform = platform;
-    state.status = "ready";
+    if (state.status === "off") {
+      state.status = "ready";
+    }
     chrome.runtime.sendMessage({ type: "MEETING_DETECTED", platform }).catch(() => {
     });
     injectStatusIndicator();
@@ -272,28 +274,14 @@
   }
   function onMeetingEnded() {
     state.meetingDetected = false;
-    if (state.status === "active" || state.status === "ready") {
-      chrome.runtime.sendMessage({ type: "END_MEETING" }).catch(() => {
+    if (state.status === "active" || state.status === "muted" || state.status === "ready") {
+      chrome.runtime.sendMessage({ type: "MEETING_ENDED" }).catch(() => {
       });
     }
     state.status = "off";
     state.meetingSessionId = null;
     state.platform = null;
-    chrome.runtime.sendMessage({ type: "STOP_AUDIO_CAPTURE" }).catch(() => {
-    });
-    if (state.speechObserver) {
-      state.speechObserver.disconnect();
-      state.speechObserver = null;
-    }
-    if (state.captionObserver) {
-      state.captionObserver.disconnect();
-      state.captionObserver = null;
-    }
-    if (state.diagnosticInterval) {
-      clearInterval(state.diagnosticInterval);
-      state.diagnosticInterval = null;
-    }
-    stopMicrophoneDetection();
+    stopSignalCapture();
     removeOverlay();
     removeStatusIndicator();
     console.log("[GleaMeet] Meeting ended");
@@ -328,6 +316,25 @@
       const captionEls = platform === "google_meet" ? CAPTION_SELECTORS.flatMap((sel) => Array.from(document.querySelectorAll(sel))).length : 0;
       console.log(`[GleaMeet] Diagnostics [${platform}]: events_emitted=${state.eventsEmitted}, speech_active=${state.userSpeaking}, recognition_running=${!!recognition}, caption_elements_found=${captionEls}`);
     }, 1e4);
+  }
+  function stopSignalCapture() {
+    chrome.runtime.sendMessage({ type: "STOP_AUDIO_CAPTURE" }).catch(() => {
+    });
+    if (state.speechObserver) {
+      state.speechObserver.disconnect();
+      state.speechObserver = null;
+    }
+    if (state.captionObserver) {
+      state.captionObserver.disconnect();
+      state.captionObserver = null;
+    }
+    if (state.diagnosticInterval) {
+      clearInterval(state.diagnosticInterval);
+      state.diagnosticInterval = null;
+    }
+    state.userSpeaking = false;
+    stopMicrophoneDetection();
+    dismissCurrentPrompt();
   }
   function observeSpeechIndicators() {
     if (state.speechObserver) {
@@ -603,22 +610,30 @@
   }
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     switch (message.type) {
-      case "STATUS_UPDATE":
+      case "STATUS_UPDATE": {
+        const previousStatus = state.status;
         state.status = message.status;
+        state.meetingDetected = message.meetingDetected ?? state.meetingDetected;
         state.meetingSessionId = message.meetingSessionId;
         state.platform = message.platform ?? state.platform ?? getPlatform();
         updateStatusIndicator();
+        if ((previousStatus === "active" || previousStatus === "muted") && (state.status === "ready" || state.status === "off" || state.status === "error")) {
+          stopSignalCapture();
+        }
         break;
+      }
       case "SHOW_PROMPT":
         if (state.status === "active") {
           showPrompt(message.prompt);
         }
         break;
       case "COACHING_STARTED":
+        stopSignalCapture();
         state.meetingSessionId = message.meetingSessionId;
         state.userId = message.userId;
         state.platform = message.platform ?? getPlatform();
         state.status = "active";
+        state.meetingDetected = true;
         updateStatusIndicator();
         startSignalCapture();
         break;

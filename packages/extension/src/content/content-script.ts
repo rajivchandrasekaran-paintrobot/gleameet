@@ -196,7 +196,9 @@ function onMeetingDetected(): void {
 
   state.meetingDetected = true;
   state.platform = platform;
-  state.status = 'ready';
+  if (state.status === 'off') {
+    state.status = 'ready';
+  }
 
   // Notify background service worker (FR-006)
   chrome.runtime.sendMessage({ type: 'MEETING_DETECTED', platform }).catch(() => {});
@@ -211,31 +213,15 @@ function onMeetingEnded(): void {
   state.meetingDetected = false;
 
   // Meeting ended — end session and generate report
-  if (state.status === 'active' || state.status === 'ready') {
-    chrome.runtime.sendMessage({ type: 'END_MEETING' }).catch(() => {});
+  if (state.status === 'active' || state.status === 'muted' || state.status === 'ready') {
+    chrome.runtime.sendMessage({ type: 'MEETING_ENDED' }).catch(() => {});
   }
 
   state.status = 'off';
   state.meetingSessionId = null;
   state.platform = null;
 
-  // Stop audio capture (handled by offscreen document — send stop message)
-  chrome.runtime.sendMessage({ type: "STOP_AUDIO_CAPTURE" }).catch(() => {});
-
-  // Clean up observers
-  if (state.speechObserver) {
-    state.speechObserver.disconnect();
-    state.speechObserver = null;
-  }
-  if (state.captionObserver) {
-    state.captionObserver.disconnect();
-    state.captionObserver = null;
-  }
-  if (state.diagnosticInterval) {
-    clearInterval(state.diagnosticInterval);
-    state.diagnosticInterval = null;
-  }
-  stopMicrophoneDetection();
+  stopSignalCapture();
 
   // Clean up UI
   removeOverlay();
@@ -286,6 +272,27 @@ function startSignalCapture(): void {
       : 0;
     console.log(`[GleaMeet] Diagnostics [${platform}]: events_emitted=${state.eventsEmitted}, speech_active=${state.userSpeaking}, recognition_running=${!!recognition}, caption_elements_found=${captionEls}`);
   }, 10000);
+}
+
+function stopSignalCapture(): void {
+  chrome.runtime.sendMessage({ type: 'STOP_AUDIO_CAPTURE' }).catch(() => {});
+
+  if (state.speechObserver) {
+    state.speechObserver.disconnect();
+    state.speechObserver = null;
+  }
+  if (state.captionObserver) {
+    state.captionObserver.disconnect();
+    state.captionObserver = null;
+  }
+  if (state.diagnosticInterval) {
+    clearInterval(state.diagnosticInterval);
+    state.diagnosticInterval = null;
+  }
+
+  state.userSpeaking = false;
+  stopMicrophoneDetection();
+  dismissCurrentPrompt();
 }
 
 /** Observe Google Meet DOM for speech/participant indicators */
@@ -694,12 +701,21 @@ function updateStatusIndicator(): void {
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   switch (message.type) {
-    case 'STATUS_UPDATE':
+    case 'STATUS_UPDATE': {
+      const previousStatus = state.status;
       state.status = message.status;
+      state.meetingDetected = message.meetingDetected ?? state.meetingDetected;
       state.meetingSessionId = message.meetingSessionId;
       state.platform = message.platform ?? state.platform ?? getPlatform();
       updateStatusIndicator();
+      if (
+        (previousStatus === 'active' || previousStatus === 'muted') &&
+        (state.status === 'ready' || state.status === 'off' || state.status === 'error')
+      ) {
+        stopSignalCapture();
+      }
       break;
+    }
 
     case 'SHOW_PROMPT':
       if (state.status === 'active') {
@@ -708,10 +724,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       break;
 
     case 'COACHING_STARTED':
+      stopSignalCapture();
       state.meetingSessionId = message.meetingSessionId;
       state.userId = message.userId;
       state.platform = message.platform ?? getPlatform();
       state.status = 'active';
+      state.meetingDetected = true;
       updateStatusIndicator();
       startSignalCapture();
       break;

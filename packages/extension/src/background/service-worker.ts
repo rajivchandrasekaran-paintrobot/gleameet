@@ -10,6 +10,7 @@ import type { RawEvent, MeetingStartRequest, PromptEvent, PromptAckRequest, Plat
 
 /** Current meeting session state */
 interface SessionState {
+  meetingDetected: boolean;
   meetingSessionId: string | null;
   userId: string | null;
   platform: Platform | null;
@@ -20,6 +21,7 @@ interface SessionState {
 }
 
 const state: SessionState = {
+  meetingDetected: false,
   meetingSessionId: null,
   userId: null,
   platform: null,
@@ -48,10 +50,16 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 async function handleMessage(message: any): Promise<any> {
   switch (message.type) {
     case 'MEETING_DETECTED':
+      state.meetingDetected = true;
       state.platform = message.platform || state.platform;
-      state.status = 'ready';
+      if (state.status === 'off') {
+        state.status = 'ready';
+      }
       broadcastStatus();
       return { status: 'ready' };
+
+    case 'MEETING_ENDED':
+      return handleMeetingEnded();
 
     case 'START_COACHING':
       if (state.meetingSessionId) {
@@ -103,6 +111,7 @@ async function handleMessage(message: any): Promise<any> {
     case 'GET_STATUS':
       return {
         status: state.status,
+        meetingDetected: state.meetingDetected,
         meetingSessionId: state.meetingSessionId,
         userId: state.userId,
         platform: state.platform,
@@ -198,6 +207,7 @@ async function handleStartCoaching(message: any): Promise<any> {
     const response = await startMeeting(request);
     state.meetingSessionId = response.meeting_session_id;
     state.platform = platform;
+    state.meetingDetected = true;
     state.status = 'active';
     state.eventBuffer = [];
 
@@ -253,7 +263,7 @@ async function handlePauseCoaching(): Promise<any> {
   }
 }
 
-/** Stop coaching and end the session */
+/** Stop coaching and end the current coaching session */
 async function handleStopCoaching(): Promise<any> {
   try {
     if (state.meetingSessionId) {
@@ -277,15 +287,52 @@ async function handleStopCoaching(): Promise<any> {
       });
 
       state.meetingSessionId = null;
-      state.platform = null;
-      state.status = 'off';
+      state.status = state.meetingDetected ? 'ready' : 'off';
       state.eventBuffer = [];
       state.batchInterval = null;
       state.pollingInterval = null;
+      if (!state.meetingDetected) {
+        state.platform = null;
+      }
 
       broadcastStatus();
-      return { status: 'off', reportId: result.report_id };
+      return { status: state.status, reportId: result.report_id };
     }
+
+    state.status = state.meetingDetected ? 'ready' : 'off';
+    if (!state.meetingDetected) {
+      state.platform = null;
+    }
+    broadcastStatus();
+    return { status: state.status };
+  } catch (err: any) {
+    state.status = 'error';
+    broadcastStatus();
+    return { error: err.message };
+  }
+}
+
+/** Handle the actual meeting tab leaving the call */
+async function handleMeetingEnded(): Promise<any> {
+  try {
+    state.meetingDetected = false;
+
+    if (state.meetingSessionId) {
+      await flushEventBuffer().catch(() => {});
+      await endMeeting(state.meetingSessionId).catch((err) => {
+        console.error('[GleaMeet] End meeting on meeting-ended cleanup failed:', err);
+      });
+    }
+
+    if (state.batchInterval) { clearInterval(state.batchInterval); state.batchInterval = null; }
+    if (state.pollingInterval) { clearInterval(state.pollingInterval); state.pollingInterval = null; }
+
+    state.meetingSessionId = null;
+    state.platform = null;
+    state.status = 'off';
+    state.eventBuffer = [];
+
+    broadcastStatus();
     return { status: 'off' };
   } catch (err: any) {
     state.status = 'error';
@@ -401,6 +448,7 @@ function broadcastStatus(): void {
   chrome.runtime.sendMessage({
     type: 'STATUS_UPDATE',
     status: state.status,
+    meetingDetected: state.meetingDetected,
     meetingSessionId: state.meetingSessionId,
     platform: state.platform,
   }).catch(() => {}); // Ignore if no listeners

@@ -24612,6 +24612,7 @@
   var Popup = () => {
     const [state, setState] = (0, import_react.useState)({
       status: "off",
+      meetingDetected: false,
       meetingSessionId: null,
       authenticated: false,
       userId: null,
@@ -24635,6 +24636,7 @@
           setState((prev) => ({
             ...prev,
             status: response.status || "off",
+            meetingDetected: response.meetingDetected ?? false,
             meetingSessionId: response.meetingSessionId || null,
             authenticated: isAuthenticated,
             userId: response.userId || null,
@@ -24658,6 +24660,7 @@
           setState((prev) => ({
             ...prev,
             status: message.status,
+            meetingDetected: message.meetingDetected ?? prev.meetingDetected,
             meetingSessionId: message.meetingSessionId,
             platform: message.platform || null
           }));
@@ -24853,7 +24856,7 @@
     };
     const statusLabels = {
       off: "Not in a meeting",
-      ready: state.meetingSessionId ? "Coaching paused" : "Meeting detected",
+      ready: state.meetingSessionId ? "Coaching paused" : state.meetingDetected ? "Meeting detected" : "Ready",
       active: "Coaching active",
       muted: "Coaching muted",
       error: "Error"
@@ -25047,7 +25050,7 @@
           /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-primary", onClick: handleStartCoaching, children: "Resume Coaching" }),
           /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-danger", onClick: handleEndMeeting, children: "End Meeting" })
         ] }),
-        state.status === "ready" && !state.meetingSessionId && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-primary", onClick: handleStartCoaching, children: "Enable Coaching" }),
+        state.status === "ready" && !state.meetingSessionId && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-primary", onClick: handleStartCoaching, children: "Start Coaching" }),
         state.status === "active" && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
           /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-secondary", onClick: handleMute, children: "Mute Prompts" }),
           /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-danger", onClick: handleStopCoaching, children: "Stop Coaching" })
