@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
+import path from 'path';
 import cors from 'cors';
 import helmet from 'helmet';
 import { authRouter } from './routes/auth';
@@ -52,6 +53,18 @@ app.use((req, _res, next) => {
 
 // Public routes
 app.use('/auth', authRouter);
+app.use(
+  '/downloads/extensions',
+  express.static(path.resolve(process.cwd(), 'packages/extension/downloads'), {
+    fallthrough: false,
+    index: false,
+    maxAge: '5m',
+    setHeaders: (res) => {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cache-Control', 'public, max-age=300');
+    },
+  }),
+);
 
 // Protected routes
 app.use('/meetings', authMiddleware, meetingsRouter);
