@@ -179,7 +179,8 @@
     userSpeaking: false,
     lastSpeechEmitMs: 0,
     eventsEmitted: 0,
-    diagnosticInterval: null
+    diagnosticInterval: null,
+    selfNames: /* @__PURE__ */ new Set()
   };
   var CAPTION_SELECTORS = [
     // 2025/2026 Meet caption area — the bottom overlay with live text
@@ -200,6 +201,55 @@
   ];
   var SPEECH_THROTTLE_MS = 500;
   var transcriptAttribution = new TranscriptAttributionTracker();
+  function rememberSelfName(name) {
+    const normalized = (name || "").trim();
+    if (!normalized) return;
+    if (/^you$/i.test(normalized)) return;
+    if (normalized.length < 2) return;
+    state.selfNames.add(normalized.toLowerCase());
+  }
+  function refreshSelfIdentityHints() {
+    const candidates = /* @__PURE__ */ new Set();
+    document.querySelectorAll("[aria-label]").forEach((el) => {
+      const label = (el.getAttribute("aria-label") || "").trim();
+      if (!label) return;
+      const youParen = label.match(/^(.*?)\s*\(\s*you\s*\)$/i);
+      const youDash = label.match(/^(.*?)\s*[—-]\s*you$/i);
+      const youComma = label.match(/^you\s*,\s*(.*?)$/i);
+      const direct = youParen?.[1] || youDash?.[1] || youComma?.[1];
+      if (direct) candidates.add(direct.trim());
+    });
+    document.querySelectorAll("*").forEach((el) => {
+      const text = (el.textContent || "").trim();
+      if (!text || text.length > 80) return;
+      if (/\bYou\b/i.test(text)) {
+        const prev = el.previousElementSibling?.textContent?.trim();
+        const next = el.nextElementSibling?.textContent?.trim();
+        if (prev && prev !== "You") candidates.add(prev);
+        if (next && next !== "You") candidates.add(next);
+      }
+    });
+    candidates.forEach(rememberSelfName);
+  }
+  function isLikelySelfCaption(el) {
+    const container = el.closest("[class]");
+    const nearby = [
+      container?.previousElementSibling?.textContent,
+      container?.parentElement?.previousElementSibling?.textContent,
+      container?.getAttribute?.("aria-label") || null,
+      el.getAttribute?.("aria-label") || null
+    ].map((v) => (v || "").trim()).filter(Boolean);
+    for (const value of nearby) {
+      if (/^you$/i.test(value) || /\(\s*you\s*\)$/i.test(value) || /\byou\b/i.test(value)) {
+        return true;
+      }
+      const normalized = value.toLowerCase();
+      for (const selfName of state.selfNames) {
+        if (normalized === selfName || normalized.includes(selfName)) return true;
+      }
+    }
+    return !!el.closest("[data-self-name]") || !!el.closest('[data-is-self="true"]');
+  }
   function getPlatform() {
     return detectPlatformFromUrl(window.location.href);
   }
@@ -441,6 +491,7 @@
       state.captionObserver.disconnect();
     }
     state.captionObserver = new MutationObserver(() => {
+      refreshSelfIdentityHints();
       const seen = /* @__PURE__ */ new Set();
       for (const selector of CAPTION_SELECTORS) {
         try {
@@ -455,9 +506,7 @@
         const wordCount = text.split(/\s+/).filter((w) => w.length > 0).length;
         if (wordCount < 5) continue;
         el.setAttribute("data-gleameet-captured", "1");
-        const container = el.closest("[class]");
-        const containerText = container?.previousElementSibling?.textContent?.trim() || "";
-        const isSelf = containerText === "You" || !!el.closest("[data-self-name]") || !!el.closest('[data-is-self="true"]');
+        const isSelf = isLikelySelfCaption(el);
         const speaker = isSelf ? "user" : "other";
         console.log(`[GleaMeet] Caption captured (${speaker}): ${text.slice(0, 80)}`);
         emitTranscriptSegment(text, speaker, "caption", 0.3);
