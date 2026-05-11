@@ -336,7 +336,7 @@ Respond in exactly this JSON format (no markdown):
     // Update tracker
     state.last_reinforcement_behavior_count = positiveBehaviorCount;
 
-    await setGlobalCooldown(meetingSessionId, 15);
+    await setGlobalCooldown(meetingSessionId, 10);
     await incrementPromptCount(meetingSessionId);
     state.prompts_shown_count++;
     state.last_prompt_shown_at = new Date().toISOString();
