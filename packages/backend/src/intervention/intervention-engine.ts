@@ -187,7 +187,7 @@ async function generatePersonalizedNudge(
   const fallback = { short_text: templateText, rationale_text: law.meeting_relevance?.slice(0, 60) || '' };
 
   try {
-    const recentLines = (state.recent_transcript || []).slice(-5);
+    const recentLines = (state.recent_transcript || []).slice(-12);
     if (recentLines.length === 0) return fallback;
 
     const transcriptBlock = recentLines
