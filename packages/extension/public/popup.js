@@ -24553,9 +24553,6 @@
     sessionToken = result.session_token;
     return result;
   }
-  async function getHistory() {
-    return apiRequest("GET", "/history");
-  }
   async function getTranscript(meetingSessionId) {
     return apiRequest("GET", `/history/${meetingSessionId}/transcript`);
   }
@@ -24567,6 +24564,9 @@
   }
   function setSessionToken(token) {
     sessionToken = token;
+  }
+  function getSessionToken() {
+    return sessionToken;
   }
 
   // src/utils/platform.ts
@@ -24738,11 +24738,16 @@
       setError(null);
       try {
         await ensureToken();
-        const data = await getHistory();
-        setMeetings(data.meetings);
-        setView("history");
+        const dashboardUrl = new URL("/reports/dashboard", await getApiBase());
+        dashboardUrl.searchParams.set("format", "html");
+        const sessionToken2 = getSessionToken();
+        if (sessionToken2) {
+          dashboardUrl.searchParams.set("session_token", sessionToken2);
+        }
+        chrome.tabs.create({ url: dashboardUrl.toString() });
+        window.close();
       } catch (e) {
-        setError(e.message || "Failed to load history");
+        setError(e.message || "Failed to open reports dashboard");
       } finally {
         setLoading(false);
       }
@@ -24791,25 +24796,40 @@
     const handleDownloadReport = () => {
       if (!report) return;
       const lines = [];
-      lines.push("=== MEETING ANALYSIS ===");
-      if (report.summary_analysis) {
-        lines.push(report.summary_analysis);
+      const coaching = report.coaching_report;
+      lines.push("=== MEETING SNAPSHOT ===");
+      if (coaching?.meeting_snapshot?.length) {
+        for (const item of coaching.meeting_snapshot) {
+          lines.push(`- ${item}`);
+        }
       }
       lines.push("");
-      lines.push("=== STRENGTHS ===");
-      for (const s of report.strengths_json) {
+      lines.push("=== WHAT WENT WELL ===");
+      for (const s of coaching?.what_went_well || report.strengths_json) {
         lines.push(`- ${s}`);
       }
       lines.push("");
-      lines.push("=== GROWTH AREAS ===");
-      for (const g of report.growth_areas_json) {
+      lines.push("=== WHAT TO IMPROVE ===");
+      for (const g of coaching?.what_to_improve || report.growth_areas_json) {
         lines.push(`- ${g}`);
       }
       lines.push("");
-      lines.push("=== RECOMMENDED ACTIONS ===");
-      report.summary_json.recommended_actions.forEach((ra, i) => {
+      lines.push("=== TOP COACHING MOMENTS ===");
+      if (coaching?.top_coaching_moments?.length) {
+        for (const moment of coaching.top_coaching_moments) {
+          lines.push(`- [${formatTimestamp(moment.timestamp_ms)}] ${moment.title}: ${moment.detail}`);
+        }
+      }
+      lines.push("");
+      lines.push("=== RECOMMENDED NEXT ACTIONS ===");
+      (coaching?.recommended_next_actions || report.summary_json.recommended_actions).forEach((ra, i) => {
         lines.push(`${i + 1}. ${ra.action} \u2014 Why: ${ra.reason}`);
       });
+      lines.push("");
+      lines.push("=== COACH SUMMARY ===");
+      if (report.summary_analysis) {
+        lines.push(report.summary_analysis);
+      }
       lines.push("");
       lines.push("=== TRANSCRIPT WITH COACHING ===");
       if (report.transcript_with_nudges) {
@@ -24883,29 +24903,50 @@
             {
               className: `report-tab ${reportTab === "transcript-nudges" ? "report-tab-active" : ""}`,
               onClick: () => setReportTab("transcript-nudges"),
-              children: "Transcript + Nudges"
+              children: "Transcript With Coaching"
             }
           )
         ] }),
         reportTab === "summary" && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "report-section", children: [
-          report.summary_analysis && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "report-block", children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "report-narrative", children: report.summary_analysis }) }),
-          report.strengths_json.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "report-block", children: [
-            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h3", { className: "report-block-title", children: "Strengths" }),
-            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("ul", { className: "report-list", children: report.strengths_json.map((s, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", { children: s }, i)) })
+          report.coaching_report?.meeting_snapshot && report.coaching_report.meeting_snapshot.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "report-block", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h3", { className: "report-block-title", children: "Meeting Snapshot" }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("ul", { className: "report-list", children: report.coaching_report.meeting_snapshot.map((item, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", { children: item }, i)) })
           ] }),
-          report.growth_areas_json.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "report-block", children: [
-            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h3", { className: "report-block-title", children: "Growth Areas" }),
-            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("ul", { className: "report-list", children: report.growth_areas_json.map((g, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", { children: g }, i)) })
+          report.coaching_report?.what_went_well && report.coaching_report.what_went_well.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "report-block", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h3", { className: "report-block-title", children: "What Went Well" }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("ul", { className: "report-list", children: report.coaching_report.what_went_well.map((item, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", { children: item }, i)) })
           ] }),
-          report.summary_json.recommended_actions.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "report-block", children: [
-            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h3", { className: "report-block-title", children: "Recommended Actions" }),
-            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("ul", { className: "report-list", children: report.summary_json.recommended_actions.map((ra, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("li", { children: [
+          report.coaching_report?.what_to_improve && report.coaching_report.what_to_improve.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "report-block", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h3", { className: "report-block-title", children: "What To Improve" }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("ul", { className: "report-list", children: report.coaching_report.what_to_improve.map((item, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", { children: item }, i)) })
+          ] }),
+          report.coaching_report?.top_coaching_moments && report.coaching_report.top_coaching_moments.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "report-block", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h3", { className: "report-block-title", children: "Top Coaching Moments" }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("ul", { className: "report-list", children: report.coaching_report.top_coaching_moments.map((moment, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("li", { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("strong", { children: [
+                formatTimestamp(moment.timestamp_ms),
+                " \xB7 ",
+                moment.title
+              ] }),
+              /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { className: "report-action-reason", children: [
+                " \u2014 ",
+                moment.detail
+              ] })
+            ] }, i)) })
+          ] }),
+          report.coaching_report?.recommended_next_actions && report.coaching_report.recommended_next_actions.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "report-block", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h3", { className: "report-block-title", children: "Recommended Next Actions" }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("ul", { className: "report-list", children: report.coaching_report.recommended_next_actions.map((ra, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("li", { children: [
               /* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: ra.action }),
               /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { className: "report-action-reason", children: [
                 " \u2014 ",
                 ra.reason
               ] })
             ] }, i)) })
+          ] }),
+          report.summary_analysis && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "report-block", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h3", { className: "report-block-title", children: "Coach Summary" }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "report-narrative", children: report.summary_analysis })
           ] })
         ] }),
         reportTab === "transcript-nudges" && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "report-transcript-list", children: [

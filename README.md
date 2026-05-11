@@ -133,6 +133,31 @@ docker-compose up --build
 # Metrics: http://localhost:3001/metrics
 ```
 
+### Local Reports Dashboard
+
+Once the backend is running locally, you can open a browser dashboard for reports at:
+
+- `http://localhost:3001/dashboard/`
+
+The dashboard uses the existing authenticated report APIs, so you need a valid session token.
+
+One practical way to get one locally:
+
+```bash
+# Show the newest local session token from Postgres
+psql -d gleameet -c "SELECT session_token, user_id, expires_at FROM user_sessions ORDER BY last_used_at DESC NULLS LAST, expires_at DESC LIMIT 5;"
+```
+
+You can also reuse the token already stored by the extension in `chrome.storage.local` as `sessionToken`.
+
+Local workflow:
+
+1. Start the backend: `npm run build:shared && npm run build:law-registry && npm run dev:backend`
+2. Sign into the extension once so a `user_sessions` row exists.
+3. Open `http://localhost:3001/dashboard/`
+4. Paste the backend URL and session token into the form.
+5. Browse individual meeting reports, weekly summaries, monthly summaries, and trend charts.
+
 ### LLM Configuration
 
 By default, GleaMeet uses a local [Ollama](https://ollama.com) instance for LLM-powered report generation (strengths, growth areas, recommendations). If Ollama is not running, the report generator falls back to rule-based output automatically.
@@ -195,6 +220,8 @@ Deploy GleaMeet so the Chrome extension works for anyone — no local backend ne
 | GET | `/prompts/poll` | Yes | Poll for pending prompts |
 | POST | `/prompts/ack` | Yes | Acknowledge prompt action |
 | GET | `/reports/:id` | Yes | Fetch post-meeting report |
+| GET | `/reports/rollups/:period` | Yes | Fetch weekly or monthly rollup summary |
+| GET | `/reports/dashboard-data` | Yes | Fetch dashboard meeting library and trend data |
 | GET | `/history` | Yes | List user's meetings |
 | GET | `/registry/active` | Yes | Get active law definitions |
 | DELETE | `/user/data` | Yes | Delete all user data |
