@@ -56,6 +56,7 @@ function createState(overrides: Partial<MeetingState> = {}): MeetingState {
     shared_goal_language_present: false,
     law_trigger_ids: [],
     prompt_ids: [],
+    recent_prompt_law_ids: [],
     recent_transcript: [],
     ...overrides,
   };
@@ -137,7 +138,7 @@ describe('Intervention Engine', () => {
 
   test('respects rate limit', async () => {
     const { getPromptCount } = require('../src/db/redis');
-    (getPromptCount as jest.Mock).mockResolvedValue(6); // standard limit is 6
+    (getPromptCount as jest.Mock).mockResolvedValue(60); // standard limit is 60
 
     const state = createState();
     const triggers = [createTrigger('K-01', 0.85)];
@@ -168,7 +169,7 @@ describe('Intervention Engine', () => {
     const state = createState();
     const triggers = [createTrigger('K-01', 0.85)];
     await rankAndSelectPrompt('test-session', triggers, state);
-    expect(setGlobalCooldown).toHaveBeenCalledWith('test-session', 60);
+    expect(setGlobalCooldown).toHaveBeenCalledWith('test-session', 15);
   });
 
   test('fatigue penalty reduces score with more prompts shown', async () => {
@@ -213,5 +214,31 @@ describe('Intervention Engine', () => {
     expect(result!.shown_at).toBeDefined();
     expect(result!.expired_at).toBeDefined();
     expect(result!.confidence).toBeGreaterThan(0);
+  });
+
+  test('prefers a fresh law over the most recently repeated law', async () => {
+    const state = createState({
+      prompts_shown_count: 3,
+      recent_prompt_law_ids: ['T-03', 'K-01', 'T-03'],
+    });
+    const triggers = [
+      createTrigger('T-03', 0.95),
+      createTrigger('K-02', 0.75),
+    ];
+
+    const result = await rankAndSelectPrompt('test-session', triggers, state);
+    expect(result).not.toBeNull();
+    expect(result!.law_id).toBe('K-02');
+  });
+
+  test('tracks recently shown law ids for later diversification', async () => {
+    const state = createState({
+      recent_prompt_law_ids: ['K-01', 'K-02', 'C-01', 'C-02', 'T-01'],
+    });
+    const triggers = [createTrigger('T-04', 0.85)];
+
+    await rankAndSelectPrompt('test-session', triggers, state);
+
+    expect(state.recent_prompt_law_ids).toEqual(['K-02', 'C-01', 'C-02', 'T-01', 'T-04']);
   });
 });

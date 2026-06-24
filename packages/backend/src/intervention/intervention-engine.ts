@@ -19,6 +19,8 @@ interface RankedCandidate {
   score: number;
 }
 
+const RECENT_PROMPT_LAW_MEMORY = 5;
+
 /**
  * Rank candidate triggers and select at most one prompt (FR-045).
  * Applies throttling, safety rules, and timing constraints.
@@ -71,6 +73,7 @@ export async function rankAndSelectPrompt(
     // Compute ranking score (section 26 heuristic)
     const urgency = computeUrgency(trigger, law);
     const novelty = computeNovelty(trigger, state);
+    const repeatPenalty = computeRepeatPenalty(trigger, state);
     const timingFit = speaking ? 0.1 : 0.9; // FR-050: penalize if user speaking
     const estimatedUsefulness = trigger.trigger_confidence * 0.8;
 
@@ -83,6 +86,7 @@ export async function rankAndSelectPrompt(
       (novelty * RANKING_WEIGHTS.NOVELTY) +
       (timingFit * RANKING_WEIGHTS.TIMING_FIT) +
       (estimatedUsefulness * RANKING_WEIGHTS.ESTIMATED_USEFULNESS) -
+      repeatPenalty -
       fatiguePenalty;
 
     // FR-050: Skip non-urgent prompts while speaking
@@ -136,6 +140,9 @@ export async function rankAndSelectPrompt(
   // Update state
   state.prompts_shown_count++;
   state.last_prompt_shown_at = new Date().toISOString();
+  const recentLawIds = state.recent_prompt_law_ids || [];
+  recentLawIds.push(selected.trigger.law_id);
+  state.recent_prompt_law_ids = recentLawIds.slice(-RECENT_PROMPT_LAW_MEMORY);
 
   // Set prompt timing
   selected.prompt.shown_at = new Date().toISOString();
@@ -169,12 +176,39 @@ function computeUrgency(trigger: LawTrigger, law: any): number {
 
 /** Compute novelty score (0-1) — higher if this law hasn't triggered recently (FR-049) */
 function computeNovelty(trigger: LawTrigger, state: MeetingState): number {
-  // First prompt is always novel
-  if (state.prompts_shown_count === 0) return 1.0;
+  const recentLawIds = state.recent_prompt_law_ids || [];
 
-  // Novelty decreases with more prompts shown
-  // In production, track per-law trigger history for better novelty scoring
-  return Math.max(0.3, 1.0 - (state.prompts_shown_count * 0.15));
+  // First prompt is always novel
+  if (state.prompts_shown_count === 0 || recentLawIds.length === 0) return 1.0;
+
+  const lastLawId = recentLawIds[recentLawIds.length - 1];
+  if (lastLawId === trigger.law_id) {
+    return 0.05;
+  }
+
+  if (recentLawIds.includes(trigger.law_id)) {
+    return 0.35;
+  }
+
+  // Overall prompt volume still matters, but fresh laws should keep
+  // outranking repeated ones so the nudge stream stays varied.
+  return Math.max(0.55, 1.0 - (state.prompts_shown_count * 0.05));
+}
+
+function computeRepeatPenalty(trigger: LawTrigger, state: MeetingState): number {
+  const recentLawIds = state.recent_prompt_law_ids || [];
+  if (recentLawIds.length === 0) return 0;
+
+  const lastLawId = recentLawIds[recentLawIds.length - 1];
+  if (lastLawId === trigger.law_id) {
+    return 0.22;
+  }
+
+  if (recentLawIds.includes(trigger.law_id)) {
+    return 0.08;
+  }
+
+  return 0;
 }
 
 /** Generate a personalized nudge using GPT-4o with transcript context */
@@ -340,6 +374,9 @@ Respond in exactly this JSON format (no markdown):
     await incrementPromptCount(meetingSessionId);
     state.prompts_shown_count++;
     state.last_prompt_shown_at = new Date().toISOString();
+    const recentLawIds = state.recent_prompt_law_ids || [];
+    recentLawIds.push('REINFORCE');
+    state.recent_prompt_law_ids = recentLawIds.slice(-RECENT_PROMPT_LAW_MEMORY);
 
     const promptEvent: PromptEvent = {
       prompt_id: uuidv4(),
