@@ -138,7 +138,7 @@ describe('Intervention Engine', () => {
 
   test('respects rate limit', async () => {
     const { getPromptCount } = require('../src/db/redis');
-    (getPromptCount as jest.Mock).mockResolvedValue(60); // standard limit is 60
+    (getPromptCount as jest.Mock).mockResolvedValue(120); // standard limit is 120
 
     const state = createState();
     const triggers = [createTrigger('K-01', 0.85)];
