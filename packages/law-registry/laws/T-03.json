@@ -9,7 +9,9 @@
   "observable_inputs": [
     "owner_assignment_present",
     "deadline_present",
-    "action_specificity_score"
+    "action_specificity_score",
+    "turn_count",
+    "summary_or_recap_count"
   ],
   "trigger_type": "event",
   "trigger_logic": {
@@ -28,6 +30,16 @@
         "feature": "action_specificity_score",
         "op": "lt",
         "value": 0.3
+      },
+      {
+        "feature": "turn_count",
+        "op": "gt",
+        "value": 8
+      },
+      {
+        "feature": "summary_or_recap_count",
+        "op": "gt",
+        "value": 0
       }
     ]
   },
@@ -63,7 +75,7 @@
     "Agreement was reached but action items were not assigned."
   ],
   "confidence_threshold": 0.4,
-  "cooldown_seconds": 30,
+  "cooldown_seconds": 90,
   "risk_notes": [
     "Do not imply the user is not taking responsibility."
   ],

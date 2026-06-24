@@ -56,6 +56,7 @@ function createState(overrides: Partial<MeetingState> = {}): MeetingState {
     shared_goal_language_present: false,
     law_trigger_ids: [],
     prompt_ids: [],
+    recent_prompt_law_ids: [],
     recent_transcript: [],
     ...overrides,
   };
@@ -82,11 +83,8 @@ describe('Law Evaluator', () => {
     const state = createState();
     const triggers = await evaluateLaws('test-session', features, state);
     const k01 = triggers.find(t => t.law_id === 'K-01');
-    // Confidence = (1.0 * 0.4) + (0.375 * 0.6) = 0.625
-    // This is below the 0.72 threshold, so K-01 should NOT trigger
-    // when zero-valued features drag down mean_strength.
-    // This is correct — the system requires high confidence.
-    expect(k01).toBeUndefined();
+    expect(k01).toBeDefined();
+    expect(k01!.trigger_confidence).toBeCloseTo(0.625, 3);
   });
 
   test('K-01: triggers when response latency is very low (high signal)', async () => {
@@ -97,14 +95,10 @@ describe('Law Evaluator', () => {
       clarifying_question_count: 0,
     };
     const state = createState();
-    // Override confidence threshold in the test — K-01 requires 0.72
-    // With availability=1.0 and mean_strength=(1.0+1.0+0+0)/4=0.5
-    // confidence = 0.4 + 0.3 = 0.7 — still below 0.72
-    // This demonstrates the conservative design: system favors silence
     const triggers = await evaluateLaws('test-session', features, state);
     const k01 = triggers.find(t => t.law_id === 'K-01');
-    // Below threshold — correctly suppressed (SR-006: favor silence)
-    expect(k01).toBeUndefined();
+    expect(k01).toBeDefined();
+    expect(k01!.trigger_confidence).toBeCloseTo(0.7, 3);
   });
 
   test('K-01: suppressed when acknowledgment > 0 (disconfirming)', async () => {
@@ -204,5 +198,34 @@ describe('Law Evaluator', () => {
     expect(k02).toBeDefined();
     expect(k02!.evidence_refs_json.length).toBeGreaterThan(0);
     expect(k02!.feature_snapshot_json).toHaveProperty('loss_frame_score');
+  });
+
+  test('T-03: does not trigger early just because action structure is absent', async () => {
+    const features: FeatureSnapshot = {
+      owner_assignment_present: false,
+      deadline_present: false,
+      action_specificity_score: 0.1,
+      turn_count: 4,
+      summary_or_recap_count: 0,
+    };
+    const state = createState();
+    const triggers = await evaluateLaws('test-session', features, state);
+    const t03 = triggers.find(t => t.law_id === 'T-03');
+    expect(t03).toBeUndefined();
+  });
+
+  test('T-03: triggers later when discussion is closing without action structure', async () => {
+    const features: FeatureSnapshot = {
+      owner_assignment_present: false,
+      deadline_present: false,
+      action_specificity_score: 0.1,
+      turn_count: 10,
+      summary_or_recap_count: 1,
+    };
+    const state = createState();
+    const triggers = await evaluateLaws('test-session', features, state);
+    const t03 = triggers.find(t => t.law_id === 'T-03');
+    expect(t03).toBeDefined();
+    expect(t03!.trigger_confidence).toBeGreaterThanOrEqual(0.4);
   });
 });
