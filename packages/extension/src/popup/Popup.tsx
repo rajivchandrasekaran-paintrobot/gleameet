@@ -104,7 +104,15 @@ export const Popup: React.FC = () => {
             if (!chrome.runtime.lastError && token) {
               chrome.runtime.sendMessage({ type: 'AUTHENTICATE', googleIdToken: token }, (res) => {
                 if (res?.ok) {
-                  setState(prev => ({ ...prev, authenticated: true, userId: res.userId }));
+                  setState(prev => ({
+                    ...prev,
+                    authenticated: true,
+                    userId: res.userId,
+                    status: res.status || prev.status,
+                    meetingDetected: res.meetingDetected ?? prev.meetingDetected,
+                    meetingSessionId: res.meetingSessionId || prev.meetingSessionId,
+                    platform: res.platform || prev.platform,
+                  }));
                 }
               });
             }
@@ -146,7 +154,15 @@ export const Popup: React.FC = () => {
             googleIdToken: token,
           }, (response) => {
             if (response?.ok) {
-              setState(prev => ({ ...prev, authenticated: true, userId: response.userId, status: 'ready' }));
+              setState(prev => ({
+                ...prev,
+                authenticated: true,
+                userId: response.userId,
+                status: response.status || prev.status,
+                meetingDetected: response.meetingDetected ?? prev.meetingDetected,
+                meetingSessionId: response.meetingSessionId || prev.meetingSessionId,
+                platform: response.platform || prev.platform,
+              }));
             } else {
               console.error('[GleaMeet] Auth response error:', response?.error);
               setError(response?.error || 'Sign in failed');

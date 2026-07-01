@@ -709,6 +709,13 @@
       case "DISMISS_ALL_PROMPTS":
         dismissCurrentPrompt();
         break;
+      case "GET_CONTENT_STATUS":
+        sendResponse({
+          meetingDetected: state.meetingDetected || detectMeeting(),
+          platform: state.platform ?? getPlatform(),
+          status: state.status
+        });
+        return true;
     }
     sendResponse({ ok: true });
     return true;

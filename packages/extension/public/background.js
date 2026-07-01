@@ -170,6 +170,7 @@ async function handleMessage(message) {
       }
       return { buffered: true };
     case "GET_STATUS":
+      await refreshMeetingContextFromTabs();
       return {
         status: state.status,
         meetingDetected: state.meetingDetected,
@@ -225,8 +226,17 @@ async function handleAuthenticate(googleIdToken) {
       sessionToken: result.session_token,
       userId: result.user_id
     });
+    await refreshMeetingContextFromTabs();
+    broadcastStatus();
     console.log("[GleaMeet] Auth success, userId:", result.user_id);
-    return { ok: true, userId: result.user_id };
+    return {
+      ok: true,
+      userId: result.user_id,
+      status: state.status,
+      meetingDetected: state.meetingDetected,
+      meetingSessionId: state.meetingSessionId,
+      platform: state.platform
+    };
   } catch (err) {
     console.error("[GleaMeet] Auth failed:", err.message);
     return { error: err.message };
@@ -494,6 +504,52 @@ function getPreferredMeetingTab(callback) {
     const preferredTab = tabs.find((tab) => tab.active) ?? tabs[0];
     callback(preferredTab);
   });
+}
+async function refreshMeetingContextFromTabs() {
+  const context = await getPreferredMeetingContext();
+  if (context?.meetingDetected) {
+    state.meetingDetected = true;
+    state.platform = context.platform ?? state.platform;
+    if (!state.meetingSessionId && state.status === "off") {
+      state.status = "ready";
+    }
+    return;
+  }
+  if (!state.meetingSessionId) {
+    state.meetingDetected = false;
+    state.platform = null;
+    if (state.status === "ready" || state.status === "off") {
+      state.status = "off";
+    }
+  }
+}
+async function getPreferredMeetingContext() {
+  const tabs = await new Promise((resolve) => {
+    chrome.tabs.query({ url: [...MEETING_TAB_URL_PATTERNS] }, resolve);
+  });
+  const orderedTabs = [
+    ...tabs.filter((tab) => tab.active),
+    ...tabs.filter((tab) => !tab.active)
+  ];
+  for (const tab of orderedTabs) {
+    if (!tab.id) continue;
+    try {
+      const response = await chrome.tabs.sendMessage(tab.id, { type: "GET_CONTENT_STATUS" });
+      if (response?.meetingDetected) {
+        return {
+          meetingDetected: true,
+          platform: response.platform ?? detectPlatformFromUrl(tab.url || "")
+        };
+      }
+    } catch (_err) {
+    }
+  }
+  const preferredTab = orderedTabs[0];
+  if (!preferredTab?.url) return null;
+  return {
+    meetingDetected: false,
+    platform: detectPlatformFromUrl(preferredTab.url)
+  };
 }
 async function resolveActiveMeetingPlatform(platformHint) {
   if (platformHint) return platformHint;
