@@ -23,6 +23,7 @@ interface SessionState {
 interface TabMeetingContext {
   meetingDetected: boolean;
   platform: Platform | null;
+  status?: SessionState['status'];
 }
 
 const state: SessionState = {
@@ -537,9 +538,7 @@ async function refreshMeetingContextFromTabs(): Promise<void> {
 }
 
 async function getPreferredMeetingContext(): Promise<TabMeetingContext | null> {
-  const tabs = await new Promise<chrome.tabs.Tab[]>((resolve) => {
-    chrome.tabs.query({ url: [...MEETING_TAB_URL_PATTERNS] }, resolve);
-  });
+  const tabs = await queryMeetingTabs();
 
   const orderedTabs = [
     ...tabs.filter(tab => tab.active),
@@ -549,16 +548,13 @@ async function getPreferredMeetingContext(): Promise<TabMeetingContext | null> {
   for (const tab of orderedTabs) {
     if (!tab.id) continue;
 
-    try {
-      const response = await chrome.tabs.sendMessage(tab.id, { type: 'GET_CONTENT_STATUS' }) as TabMeetingContext | undefined;
-      if (response?.meetingDetected) {
-        return {
-          meetingDetected: true,
-          platform: response.platform ?? detectPlatformFromUrl(tab.url || ''),
-        };
-      }
-    } catch (_err) {
-      // Tab may not have a live content script yet. Fall back to URL-based platform detection below.
+    const response = await ensureMeetingTabReady(tab);
+    if (response?.meetingDetected) {
+      return {
+        meetingDetected: true,
+        platform: response.platform ?? detectPlatformFromUrl(tab.url || ''),
+        status: response.status,
+      };
     }
   }
 
@@ -569,6 +565,44 @@ async function getPreferredMeetingContext(): Promise<TabMeetingContext | null> {
     meetingDetected: false,
     platform: detectPlatformFromUrl(preferredTab.url),
   };
+}
+
+async function queryMeetingTabs(): Promise<chrome.tabs.Tab[]> {
+  return new Promise<chrome.tabs.Tab[]>((resolve) => {
+    chrome.tabs.query({ url: [...MEETING_TAB_URL_PATTERNS] }, resolve);
+  });
+}
+
+async function ensureMeetingTabReady(tab: chrome.tabs.Tab): Promise<TabMeetingContext | null> {
+  if (!tab.id) return null;
+
+  try {
+    return await chrome.tabs.sendMessage(tab.id, { type: 'GET_CONTENT_STATUS' }) as TabMeetingContext | null;
+  } catch (_err) {
+    try {
+      await chrome.scripting.insertCSS({
+        target: { tabId: tab.id },
+        files: ['content.css'],
+      });
+    } catch (_cssErr) {
+      // Ignore duplicate CSS insertions or pages that reject CSS briefly during navigation.
+    }
+
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ['content.js'],
+      });
+    } catch (_jsErr) {
+      return null;
+    }
+
+    try {
+      return await chrome.tabs.sendMessage(tab.id, { type: 'GET_CONTENT_STATUS' }) as TabMeetingContext | null;
+    } catch (_retryErr) {
+      return null;
+    }
+  }
 }
 
 async function resolveActiveMeetingPlatform(platformHint?: Platform | null): Promise<Platform | null> {

@@ -524,24 +524,20 @@ async function refreshMeetingContextFromTabs() {
   }
 }
 async function getPreferredMeetingContext() {
-  const tabs = await new Promise((resolve) => {
-    chrome.tabs.query({ url: [...MEETING_TAB_URL_PATTERNS] }, resolve);
-  });
+  const tabs = await queryMeetingTabs();
   const orderedTabs = [
     ...tabs.filter((tab) => tab.active),
     ...tabs.filter((tab) => !tab.active)
   ];
   for (const tab of orderedTabs) {
     if (!tab.id) continue;
-    try {
-      const response = await chrome.tabs.sendMessage(tab.id, { type: "GET_CONTENT_STATUS" });
-      if (response?.meetingDetected) {
-        return {
-          meetingDetected: true,
-          platform: response.platform ?? detectPlatformFromUrl(tab.url || "")
-        };
-      }
-    } catch (_err) {
+    const response = await ensureMeetingTabReady(tab);
+    if (response?.meetingDetected) {
+      return {
+        meetingDetected: true,
+        platform: response.platform ?? detectPlatformFromUrl(tab.url || ""),
+        status: response.status
+      };
     }
   }
   const preferredTab = orderedTabs[0];
@@ -550,6 +546,38 @@ async function getPreferredMeetingContext() {
     meetingDetected: false,
     platform: detectPlatformFromUrl(preferredTab.url)
   };
+}
+async function queryMeetingTabs() {
+  return new Promise((resolve) => {
+    chrome.tabs.query({ url: [...MEETING_TAB_URL_PATTERNS] }, resolve);
+  });
+}
+async function ensureMeetingTabReady(tab) {
+  if (!tab.id) return null;
+  try {
+    return await chrome.tabs.sendMessage(tab.id, { type: "GET_CONTENT_STATUS" });
+  } catch (_err) {
+    try {
+      await chrome.scripting.insertCSS({
+        target: { tabId: tab.id },
+        files: ["content.css"]
+      });
+    } catch (_cssErr) {
+    }
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ["content.js"]
+      });
+    } catch (_jsErr) {
+      return null;
+    }
+    try {
+      return await chrome.tabs.sendMessage(tab.id, { type: "GET_CONTENT_STATUS" });
+    } catch (_retryErr) {
+      return null;
+    }
+  }
 }
 async function resolveActiveMeetingPlatform(platformHint) {
   if (platformHint) return platformHint;

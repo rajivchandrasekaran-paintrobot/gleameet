@@ -2,7 +2,7 @@
     "manifest_version": 3,
     "name": "GleaMeet - AI Meeting Coach",
     "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAu6SVQewW0ezqK3pwY7qoGBBeSodMN9+IX8NXFUj2z89CVG0OhA9pDuq/Hrjh3o3vBs9Mzlc19+Ot8Eu6Cf2Y2OJ2ANifu29ezsutx84FX6UxAX9g9AcblhHntXtJPUaEAYxEQ27lz171tdezPGV8DThnNoDnuV+woecl/4eGSbLoZ56ytWeXYA9iXjNN0fjZp7JPFOo1ugZYjX5hKpSJBwsUC7LqN4ZEcWI0ozzNfNsdoXB1UUY3BCsf8XYlc2/OcK21jkK/IrDTxphDEjo9FwDTjC8xsJA9g/BsV38cd9TOJ21616hUI8y97AFzODXKgAl5H1iA098UXnNf24yDLwIDAQAB",
-    "version": "1.0.27",
+    "version": "1.0.28",
     "description": "Private real-time AI meeting coach for Google Meet",
     "permissions": [
         "activeTab",
@@ -10,7 +10,8 @@
         "storage",
         "alarms",
         "identity",
-        "offscreen"
+        "offscreen",
+        "scripting"
     ],
     "oauth2": {
         "client_id": "783981911702-fnhs6kad6qjk4j2vpkve0g75b7f4ibjt.apps.googleusercontent.com",
