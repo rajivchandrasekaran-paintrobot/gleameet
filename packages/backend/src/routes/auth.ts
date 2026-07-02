@@ -25,12 +25,11 @@ authRouter.post('/session', async (req: Request, res: Response) => {
     let displayName: string;
 
     try {
-      const nodeFetch = (await import('node-fetch')).default;
       const tokenPrefix = google_id_token.substring(0, 10);
       console.log(`[AUTH] Verifying token (prefix: ${tokenPrefix}..., length: ${google_id_token.length})`);
 
       // Try userinfo endpoint first
-      const userInfoRes = await nodeFetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+      const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
         headers: { Authorization: `Bearer ${google_id_token}` }
       });
       const userInfoBody = await userInfoRes.text();
@@ -46,7 +45,7 @@ authRouter.post('/session', async (req: Request, res: Response) => {
         console.log(`[AUTH] Verified via userinfo: ${email}`);
       } else {
         // Fall back to tokeninfo
-        const tokenInfoRes = await nodeFetch(
+        const tokenInfoRes = await fetch(
           `https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=${google_id_token}`
         );
         const tokenInfoBody = await tokenInfoRes.text();

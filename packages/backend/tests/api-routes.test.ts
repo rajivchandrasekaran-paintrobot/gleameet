@@ -63,6 +63,14 @@ jest.mock('../src/db/queries', () => ({
   deleteAllUserData: jest.fn().mockResolvedValue('audit-id'),
 }));
 
+// Mock outbound Google userinfo call so /auth/session tests don't hit the real network
+global.fetch = jest.fn().mockResolvedValue({
+  ok: true,
+  status: 200,
+  text: async () =>
+    JSON.stringify({ sub: 'mock-google-sub-123', email: 'mock-user@gleameet.dev', name: 'Mock User' }),
+}) as unknown as typeof fetch;
+
 function createApp() {
   const app = express();
   app.use(express.json());
@@ -83,6 +91,10 @@ describe('API Routes', () => {
   let app: express.Express;
 
   beforeAll(() => {
+    const { redis } = require('../src/db/redis');
+    (redis.get as jest.Mock).mockImplementation((key: string) =>
+      key === `session:${TOKEN}` ? Promise.resolve('test-user-id') : Promise.resolve(null)
+    );
     app = createApp();
   });
 

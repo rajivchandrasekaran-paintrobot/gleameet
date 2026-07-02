@@ -40,6 +40,7 @@ function createMeetingState(overrides: Partial<MeetingState> = {}): MeetingState
     law_trigger_ids: [],
     prompt_ids: [],
     recent_transcript: [],
+    recent_prompt_law_ids: [],
     ...overrides,
   };
 }
