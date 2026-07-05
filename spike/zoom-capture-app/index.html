@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head><title>GleaMeet Zoom Spike</title></head>
+<body>
+  <h1>Zoom Capture Spike</h1>
+  <pre id="log"></pre>
+  <script src="https://appssdk.zoom.us/sdk.js"></script>
+  <script>
+    const log = (label, data) => {
+      document.getElementById('log').textContent += `\n${label}: ${JSON.stringify(data, null, 2)}`;
+      console.log(label, data);
+    };
+    window.onload = async () => {
+      try {
+        const zoomSdk = window.zoomSdk;
+        const config = await zoomSdk.config({
+          capabilities: ['getMeetingContext', 'getRunningContext', 'getUserContext', 'onMeeting', 'getMeetingParticipants'],
+        });
+        log('config', config);
+        log('meetingContext', await zoomSdk.getMeetingContext());
+        log('runningContext', await zoomSdk.getRunningContext());
+        log('userContext', await zoomSdk.getUserContext());
+        zoomSdk.onMeeting((e) => log('onMeeting event', e));
+      } catch (err) {
+        log('ERROR', err.message || err);
+      }
+    };
+  </script>
+</body>
+</html>
