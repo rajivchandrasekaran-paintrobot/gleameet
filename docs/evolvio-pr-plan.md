@@ -21,7 +21,7 @@ Platform UX  (Meet / Zoom / Teams panel)
    ↕   platform adapter  — AuthProvider, MeetingPlatformAdapter, PromptSurface, AudioCaptureProvider
 client-core  (session, batching, polling — platform-neutral)          ← FRONT-END ADAPTER
    ↕
-====  @evolvio/shared : normalized event model + API types  ====      ← THE CONTRACT (already exists)
+====  @gleameet/shared : normalized event model + API types  ====      ← THE CONTRACT (already exists)
    ↕
 Transport layer  (Express routes = thin HTTP → engine mapping)        ← BACK-END ADAPTER
    ↕   engine port — ingestEvents() / startSession() / endSession()
@@ -107,7 +107,7 @@ The hexagonal architecture creates two independent lanes:
 
 - **Front-end lane:** PR 2 (client-core) → PR 6 (chrome regression gate) → PR 7 (ui-app) → PRs 12–13 (Zoom). Teams (PRs 10–11) is Milestone 2, after Zoom ships.
 - **Back-end lane:** PR 4 (identity) → PR 5 (queue+metadata) → PR 9 (engine port) → PR 9B (infra ports, optional)
-- **Bridge:** PR 8 (contract tests + mock backend) lets the front-end lane develop/test against a mock while the back-end lane evolves. Freeze `@evolvio/shared` after PRs 4 + 5 land, then stand up the contract tests.
+- **Bridge:** PR 8 (contract tests + mock backend) lets the front-end lane develop/test against a mock while the back-end lane evolves. Freeze `@gleameet/shared` after PRs 4 + 5 land, then stand up the contract tests.
 
 ---
 
@@ -834,7 +834,7 @@ Step 1: Use @implementer to create packages/mock-backend/ as a new workspace pac
 - In-memory state: users, sessions, prompts, history, reports
 - Supports all three auth providers (returns mock tokens)
 - Serves realistic prompt and report data
-- Depends on @evolvio/shared for types; nothing depends on it except tests
+- Depends on @gleameet/shared for types; nothing depends on it except tests
 - Register in root package.json workspaces
 
 Step 2: Use @test-writer to create packages/mock-backend/contract-tests/:
@@ -1454,7 +1454,7 @@ FRONT-END LANE: PR 2 (client-core) · PR 6 (chrome gate) · PR 7 (ui-app) · PRs
 BRIDGE:         PR 8 (contract tests + mock-backend package) — front-end develops against mock
 ```
 
-Freeze `@evolvio/shared` after PRs 4 + 5 land, then stand up the contract tests (PR 8). This is the mechanism that keeps parallel front/back development from breaking each other.
+Freeze `@gleameet/shared` after PRs 4 + 5 land, then stand up the contract tests (PR 8). This is the mechanism that keeps parallel front/back development from breaking each other.
 
 ## Parallel Execution Map — Milestone 1
 
@@ -1516,7 +1516,7 @@ Two mobile-specific engineering notes carried into the PRs above: (a) mobile web
 
 7. **The lead owns two contracts** (from the workplan's dual-adapter model):
    - `client-core/types/runtime.ts` (front-end port)
-   - `@evolvio/shared` + the engine port (back-end seam)
+   - `@gleameet/shared` + the engine port (back-end seam)
    Keep both stable before each lane fans out. If a subagent proposes a change to either contract, escalate to the orchestrator for review — don't let agents silently modify shared interfaces.
 
 8. **Front-end lane can develop against the mock (PR 8) while back-end lane evolves.** Once the contract tests exist, the front-end lane doesn't need the real backend running. This means Teams and Zoom app development is unblocked even if backend PRs 9/9B are still in progress.
