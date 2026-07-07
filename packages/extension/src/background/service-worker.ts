@@ -26,6 +26,11 @@ interface TabMeetingContext {
   status?: SessionState['status'];
 }
 
+interface MeetingTabMessage {
+  type: string;
+  [key: string]: unknown;
+}
+
 const state: SessionState = {
   meetingDetected: false,
   meetingSessionId: null,
@@ -75,18 +80,11 @@ async function handleMessage(message: any): Promise<any> {
         state.pollingInterval = setInterval(pollForPrompts, 2000);
         broadcastStatus();
         // Notify content script
-        chrome.tabs.query({ url: [...MEETING_TAB_URL_PATTERNS] }, (tabs) => {
-          for (const tab of tabs) {
-            if (tab.id) {
-              chrome.tabs.sendMessage(tab.id, {
-                type: 'COACHING_STARTED',
-                meetingSessionId: state.meetingSessionId,
-                userId: state.userId,
-                platform: state.platform,
-              }).catch(() => {});
-
-            }
-          }
+        await sendMessageToMeetingTabs({
+          type: 'COACHING_STARTED',
+          meetingSessionId: state.meetingSessionId,
+          userId: state.userId,
+          platform: state.platform,
         });
         return { status: 'active', meetingSessionId: state.meetingSessionId, resumed: true };
       }
@@ -234,19 +232,11 @@ async function handleStartCoaching(message: any): Promise<any> {
     state.pollingInterval = setInterval(pollForPrompts, 2000);
 
     // Notify content script that coaching has started (audio capture runs there)
-    chrome.tabs.query({ url: [...MEETING_TAB_URL_PATTERNS] }, (tabs) => {
-      for (const tab of tabs) {
-        if (tab.id) {
-          chrome.tabs.sendMessage(tab.id, {
-            type: 'COACHING_STARTED',
-            meetingSessionId: response.meeting_session_id,
-            userId: state.userId,
-            platform,
-          }).catch(() => {});
-
-
-        }
-      }
+    await sendMessageToMeetingTabs({
+      type: 'COACHING_STARTED',
+      meetingSessionId: response.meeting_session_id,
+      userId: state.userId,
+      platform,
     });
 
     broadcastStatus();
@@ -294,13 +284,7 @@ async function handleStopCoaching(): Promise<any> {
       if (state.pollingInterval) clearInterval(state.pollingInterval);
 
       // Dismiss all prompts on content scripts
-      chrome.tabs.query({ url: [...MEETING_TAB_URL_PATTERNS] }, (tabs) => {
-        for (const tab of tabs) {
-          if (tab.id) {
-            chrome.tabs.sendMessage(tab.id, { type: 'DISMISS_ALL_PROMPTS' }).catch(() => {});
-          }
-        }
-      });
+      await sendMessageToMeetingTabs({ type: 'DISMISS_ALL_PROMPTS' });
 
       state.meetingSessionId = null;
       state.status = state.meetingDetected ? 'ready' : 'off';
@@ -472,15 +456,9 @@ function broadcastStatus(): void {
 
 /** Broadcast a prompt to content scripts on supported meeting tabs */
 function broadcastPrompt(prompt: PromptEvent): void {
-  chrome.tabs.query({ url: [...MEETING_TAB_URL_PATTERNS] }, (tabs) => {
-    for (const tab of tabs) {
-      if (tab.id) {
-        chrome.tabs.sendMessage(tab.id, {
-          type: 'SHOW_PROMPT',
-          prompt,
-        }).catch(() => {});
-      }
-    }
+  void sendMessageToMeetingTabs({
+    type: 'SHOW_PROMPT',
+    prompt,
   });
 }
 
@@ -493,19 +471,13 @@ function broadcastAudioTranscript(message: {
 }): void {
   if (!message.text || !message.stream) return;
 
-  chrome.tabs.query({ url: [...MEETING_TAB_URL_PATTERNS] }, (tabs) => {
-    for (const tab of tabs) {
-      if (tab.id) {
-        chrome.tabs.sendMessage(tab.id, {
-          type: 'AUDIO_TRANSCRIPT_RESULT',
-          text: message.text,
-          stream: message.stream,
-          startOffsetMs: message.startOffsetMs,
-          endOffsetMs: message.endOffsetMs,
-          eventTimeMs: message.eventTimeMs,
-        }).catch(() => {});
-      }
-    }
+  void sendMessageToMeetingTabs({
+    type: 'AUDIO_TRANSCRIPT_RESULT',
+    text: message.text,
+    stream: message.stream,
+    startOffsetMs: message.startOffsetMs,
+    endOffsetMs: message.endOffsetMs,
+    eventTimeMs: message.eventTimeMs,
   });
 }
 
@@ -571,6 +543,27 @@ async function queryMeetingTabs(): Promise<chrome.tabs.Tab[]> {
   return new Promise<chrome.tabs.Tab[]>((resolve) => {
     chrome.tabs.query({ url: [...MEETING_TAB_URL_PATTERNS] }, resolve);
   });
+}
+
+async function sendMessageToMeetingTabs(message: MeetingTabMessage): Promise<void> {
+  const tabs = await queryMeetingTabs();
+
+  await Promise.all(
+    tabs.map(async (tab) => {
+      if (!tab.id) return;
+
+      const context = await ensureMeetingTabReady(tab);
+      if (!context && message.type !== 'DISMISS_ALL_PROMPTS') {
+        return;
+      }
+
+      try {
+        await chrome.tabs.sendMessage(tab.id, message);
+      } catch (_err) {
+        // Ignore tabs that navigated away or still aren't ready.
+      }
+    })
+  );
 }
 
 async function ensureMeetingTabReady(tab: chrome.tabs.Tab): Promise<TabMeetingContext | null> {

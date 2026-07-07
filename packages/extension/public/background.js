@@ -136,18 +136,11 @@ async function handleMessage(message) {
         state.batchInterval = setInterval(flushEventBuffer, 3e3);
         state.pollingInterval = setInterval(pollForPrompts, 2e3);
         broadcastStatus();
-        chrome.tabs.query({ url: [...MEETING_TAB_URL_PATTERNS] }, (tabs) => {
-          for (const tab of tabs) {
-            if (tab.id) {
-              chrome.tabs.sendMessage(tab.id, {
-                type: "COACHING_STARTED",
-                meetingSessionId: state.meetingSessionId,
-                userId: state.userId,
-                platform: state.platform
-              }).catch(() => {
-              });
-            }
-          }
+        await sendMessageToMeetingTabs({
+          type: "COACHING_STARTED",
+          meetingSessionId: state.meetingSessionId,
+          userId: state.userId,
+          platform: state.platform
         });
         return { status: "active", meetingSessionId: state.meetingSessionId, resumed: true };
       }
@@ -265,18 +258,11 @@ async function handleStartCoaching(message) {
     state.eventBuffer = [];
     state.batchInterval = setInterval(flushEventBuffer, 3e3);
     state.pollingInterval = setInterval(pollForPrompts, 2e3);
-    chrome.tabs.query({ url: [...MEETING_TAB_URL_PATTERNS] }, (tabs) => {
-      for (const tab of tabs) {
-        if (tab.id) {
-          chrome.tabs.sendMessage(tab.id, {
-            type: "COACHING_STARTED",
-            meetingSessionId: response.meeting_session_id,
-            userId: state.userId,
-            platform
-          }).catch(() => {
-          });
-        }
-      }
+    await sendMessageToMeetingTabs({
+      type: "COACHING_STARTED",
+      meetingSessionId: response.meeting_session_id,
+      userId: state.userId,
+      platform
     });
     broadcastStatus();
     return { status: "active", meetingSessionId: response.meeting_session_id };
@@ -314,14 +300,7 @@ async function handleStopCoaching() {
       const result = await endMeeting(state.meetingSessionId);
       if (state.batchInterval) clearInterval(state.batchInterval);
       if (state.pollingInterval) clearInterval(state.pollingInterval);
-      chrome.tabs.query({ url: [...MEETING_TAB_URL_PATTERNS] }, (tabs) => {
-        for (const tab of tabs) {
-          if (tab.id) {
-            chrome.tabs.sendMessage(tab.id, { type: "DISMISS_ALL_PROMPTS" }).catch(() => {
-            });
-          }
-        }
-      });
+      await sendMessageToMeetingTabs({ type: "DISMISS_ALL_PROMPTS" });
       state.meetingSessionId = null;
       state.status = state.meetingDetected ? "ready" : "off";
       state.eventBuffer = [];
@@ -469,34 +448,20 @@ function broadcastStatus() {
   });
 }
 function broadcastPrompt(prompt) {
-  chrome.tabs.query({ url: [...MEETING_TAB_URL_PATTERNS] }, (tabs) => {
-    for (const tab of tabs) {
-      if (tab.id) {
-        chrome.tabs.sendMessage(tab.id, {
-          type: "SHOW_PROMPT",
-          prompt
-        }).catch(() => {
-        });
-      }
-    }
+  void sendMessageToMeetingTabs({
+    type: "SHOW_PROMPT",
+    prompt
   });
 }
 function broadcastAudioTranscript(message) {
   if (!message.text || !message.stream) return;
-  chrome.tabs.query({ url: [...MEETING_TAB_URL_PATTERNS] }, (tabs) => {
-    for (const tab of tabs) {
-      if (tab.id) {
-        chrome.tabs.sendMessage(tab.id, {
-          type: "AUDIO_TRANSCRIPT_RESULT",
-          text: message.text,
-          stream: message.stream,
-          startOffsetMs: message.startOffsetMs,
-          endOffsetMs: message.endOffsetMs,
-          eventTimeMs: message.eventTimeMs
-        }).catch(() => {
-        });
-      }
-    }
+  void sendMessageToMeetingTabs({
+    type: "AUDIO_TRANSCRIPT_RESULT",
+    text: message.text,
+    stream: message.stream,
+    startOffsetMs: message.startOffsetMs,
+    endOffsetMs: message.endOffsetMs,
+    eventTimeMs: message.eventTimeMs
   });
 }
 function getPreferredMeetingTab(callback) {
@@ -551,6 +516,22 @@ async function queryMeetingTabs() {
   return new Promise((resolve) => {
     chrome.tabs.query({ url: [...MEETING_TAB_URL_PATTERNS] }, resolve);
   });
+}
+async function sendMessageToMeetingTabs(message) {
+  const tabs = await queryMeetingTabs();
+  await Promise.all(
+    tabs.map(async (tab) => {
+      if (!tab.id) return;
+      const context = await ensureMeetingTabReady(tab);
+      if (!context && message.type !== "DISMISS_ALL_PROMPTS") {
+        return;
+      }
+      try {
+        await chrome.tabs.sendMessage(tab.id, message);
+      } catch (_err) {
+      }
+    })
+  );
 }
 async function ensureMeetingTabReady(tab) {
   if (!tab.id) return null;
