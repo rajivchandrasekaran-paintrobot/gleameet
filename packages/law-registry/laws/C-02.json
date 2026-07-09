@@ -17,12 +17,12 @@
       {
         "feature": "turn_count",
         "op": "gt",
-        "value": 6
+        "value": 4
       },
       {
         "feature": "action_specificity_score",
         "op": "lt",
-        "value": 0.3
+        "value": 0.45
       }
     ]
   },

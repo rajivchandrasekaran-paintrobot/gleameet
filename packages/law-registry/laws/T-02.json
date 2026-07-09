@@ -27,7 +27,7 @@
       {
         "feature": "turn_count",
         "op": "gt",
-        "value": 5
+        "value": 3
       }
     ]
   },

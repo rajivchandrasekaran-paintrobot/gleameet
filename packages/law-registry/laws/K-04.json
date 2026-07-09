@@ -17,7 +17,7 @@
       {
         "feature": "certainty_language_score",
         "op": "gt",
-        "value": 0.7
+        "value": 0.45
       },
       {
         "feature": "evidence_reference_present",

@@ -16,12 +16,12 @@
       {
         "feature": "loss_frame_score",
         "op": "gt",
-        "value": 0.6
+        "value": 0.4
       },
       {
         "feature": "gain_frame_score",
         "op": "lt",
-        "value": 0.3
+        "value": 0.4
       }
     ]
   },
