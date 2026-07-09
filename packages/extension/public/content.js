@@ -914,15 +914,15 @@
     if (window.location.href !== lastUrl) {
       lastUrl = window.location.href;
       state.platform = getPlatform();
-      const inMeeting = detectMeeting();
-      if (inMeeting && !state.meetingDetected) {
-        onMeetingDetected();
-      } else if (!inMeeting && state.meetingDetected && !meetingEndDebounceTimer) {
-        meetingEndDebounceTimer = setTimeout(() => {
-          meetingEndDebounceTimer = null;
-          if (!detectMeeting()) onMeetingEnded();
-        }, 3e3);
-      }
+    }
+    const inMeeting = detectMeeting();
+    if (inMeeting && !state.meetingDetected) {
+      onMeetingDetected();
+    } else if (!inMeeting && state.meetingDetected && !meetingEndDebounceTimer) {
+      meetingEndDebounceTimer = setTimeout(() => {
+        meetingEndDebounceTimer = null;
+        if (!detectMeeting()) onMeetingEnded();
+      }, 3e3);
     }
   }, 1e3);
 })();

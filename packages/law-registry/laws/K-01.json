@@ -8,6 +8,7 @@
   "meeting_relevance": "User may react too quickly under pressure.",
   "observable_inputs": [
     "disagreement_detected",
+    "turn_count",
     "response_latency_seconds",
     "acknowledgment_count",
     "clarifying_question_count"
@@ -21,9 +22,14 @@
         "value": true
       },
       {
+        "feature": "turn_count",
+        "op": "gt",
+        "value": 2
+      },
+      {
         "feature": "response_latency_seconds",
         "op": "lt",
-        "value": 1.5
+        "value": 1
       },
       {
         "feature": "acknowledgment_count",
@@ -68,7 +74,7 @@
   "prompt_templates_post": [
     "You often moved quickly to rebuttal before clarifying the concern."
   ],
-  "confidence_threshold": 0.4,
+  "confidence_threshold": 0.5,
   "cooldown_seconds": 30,
   "risk_notes": [
     "Do not infer trait impulsivity."
