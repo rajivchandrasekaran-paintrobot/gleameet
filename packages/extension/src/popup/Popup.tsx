@@ -61,6 +61,7 @@ function formatDate(iso: string): string {
 }
 
 export const Popup: React.FC = () => {
+  const extensionVersion = chrome.runtime.getManifest().version;
   const [state, setState] = useState<PopupState>({
     status: 'off',
     meetingDetected: false,
@@ -638,6 +639,7 @@ export const Popup: React.FC = () => {
     <div className="popup-container">
       <div className="popup-header">
         <h1>GleaMeet</h1>
+        <span className="popup-version">v{extensionVersion}</span>
       </div>
 
       {/* Status indicator (FR-008) */}

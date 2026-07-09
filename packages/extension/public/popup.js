@@ -24616,6 +24616,7 @@
     });
   }
   var Popup = () => {
+    const extensionVersion = chrome.runtime.getManifest().version;
     const [state, setState] = (0, import_react.useState)({
       status: "off",
       meetingDetected: false,
@@ -25091,7 +25092,13 @@
       ] });
     }
     return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "popup-container", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "popup-header", children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h1", { children: "GleaMeet" }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "popup-header", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h1", { children: "GleaMeet" }),
+        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { className: "popup-version", children: [
+          "v",
+          extensionVersion
+        ] })
+      ] }),
       /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "meeting-info", children: [
         /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: `status-badge status-${state.status}`, children: [
           /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dot" }),
