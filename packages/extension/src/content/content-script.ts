@@ -28,9 +28,6 @@ interface ContentState {
   lastSpeechEmitMs: number;
   eventsEmitted: number;
   diagnosticInterval: ReturnType<typeof setInterval> | null;
-  localPromptInterval: ReturnType<typeof setInterval> | null;
-  lastPromptShownAtMs: number | null;
-  lastUserTranscriptAtMs: number | null;
   selfNames: Set<string>;
 }
 
@@ -49,9 +46,6 @@ const state: ContentState = {
   lastSpeechEmitMs: 0,
   eventsEmitted: 0,
   diagnosticInterval: null,
-  localPromptInterval: null,
-  lastPromptShownAtMs: null,
-  lastUserTranscriptAtMs: null,
   selfNames: new Set<string>(),
 };
 
@@ -340,22 +334,6 @@ function startSignalCapture(): void {
     console.log(`[GleaMeet] Diagnostics [${platform}]: events_emitted=${state.eventsEmitted}, speech_active=${state.userSpeaking}, recognition_running=${!!recognition}, caption_elements_found=${captionEls}`);
   }, 10000);
 
-  if (state.localPromptInterval) {
-    clearInterval(state.localPromptInterval);
-  }
-  state.localPromptInterval = setInterval(() => {
-    if (state.status !== 'active') return;
-    if (state.currentPrompt) return;
-    if (!state.lastUserTranscriptAtMs) return;
-
-    const now = Date.now();
-    const sinceTranscriptMs = now - state.lastUserTranscriptAtMs;
-    const sincePromptMs = state.lastPromptShownAtMs ? now - state.lastPromptShownAtMs : Infinity;
-
-    if (sinceTranscriptMs <= 30000 && sincePromptMs >= 45000) {
-      showLocalFallbackPrompt();
-    }
-  }, 15000);
 }
 
 function stopSignalCapture(): void {
@@ -373,11 +351,6 @@ function stopSignalCapture(): void {
     clearInterval(state.diagnosticInterval);
     state.diagnosticInterval = null;
   }
-  if (state.localPromptInterval) {
-    clearInterval(state.localPromptInterval);
-    state.localPromptInterval = null;
-  }
-
   state.userSpeaking = false;
   stopMicrophoneDetection();
   dismissCurrentPrompt();
@@ -625,9 +598,6 @@ function emitTranscriptSegment(
   });
 
   if (!payload) return;
-  if (payload.speaker === 'user') {
-    state.lastUserTranscriptAtMs = eventTimeMs;
-  }
   emitEvent('transcript_segment', payload as unknown as Record<string, unknown>, captureConfidence);
 }
 
@@ -783,7 +753,6 @@ function showPrompt(prompt: PromptEvent): void {
   dismissCurrentPrompt();
 
   state.currentPrompt = prompt;
-  state.lastPromptShownAtMs = Date.now();
   const overlay = createOverlay();
 
   const promptEl = document.createElement('div');
@@ -841,27 +810,6 @@ function showPrompt(prompt: PromptEvent): void {
   }, 15000);
 }
 
-function showLocalFallbackPrompt(): void {
-  if (state.currentPrompt) return;
-
-  const prompt: PromptEvent = {
-    prompt_id: `local-fallback-${Date.now()}`,
-    meeting_session_id: state.meetingSessionId || 'local',
-    law_id: 'LOCAL-FALLBACK',
-    prompt_type: 'ask',
-    short_text: 'Pause. Ask one clarifying question.',
-    rationale_text: 'Transcript is active, so coaching should not stay silent.',
-    example_phrase: null,
-    shown_at: new Date().toISOString(),
-    expired_at: new Date(Date.now() + 30000).toISOString(),
-    display_state: 'shown',
-    dismissed_at: null,
-    confidence: 0.5,
-  };
-
-  showPrompt(prompt);
-}
-
 /** Dismiss the current prompt */
 function dismissCurrentPrompt(): void {
   if (state.currentPrompt) {
@@ -890,7 +838,6 @@ function dismissPrompt(promptId: string): void {
 
 /** Acknowledge a prompt action to the backend (FR-054) */
 function ackPrompt(promptId: string, action: 'shown' | 'dismissed' | 'muted'): void {
-  if (promptId.startsWith('local-fallback-')) return;
   chrome.runtime.sendMessage({
     type: 'ACK_PROMPT',
     promptId,

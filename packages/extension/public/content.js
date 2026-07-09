@@ -189,9 +189,6 @@
     lastSpeechEmitMs: 0,
     eventsEmitted: 0,
     diagnosticInterval: null,
-    localPromptInterval: null,
-    lastPromptShownAtMs: null,
-    lastUserTranscriptAtMs: null,
     selfNames: /* @__PURE__ */ new Set()
   };
   var CAPTION_SELECTORS = [
@@ -378,20 +375,6 @@
       const captionEls = platform === "google_meet" ? CAPTION_SELECTORS.flatMap((sel) => Array.from(document.querySelectorAll(sel))).length : 0;
       console.log(`[GleaMeet] Diagnostics [${platform}]: events_emitted=${state.eventsEmitted}, speech_active=${state.userSpeaking}, recognition_running=${!!recognition}, caption_elements_found=${captionEls}`);
     }, 1e4);
-    if (state.localPromptInterval) {
-      clearInterval(state.localPromptInterval);
-    }
-    state.localPromptInterval = setInterval(() => {
-      if (state.status !== "active") return;
-      if (state.currentPrompt) return;
-      if (!state.lastUserTranscriptAtMs) return;
-      const now = Date.now();
-      const sinceTranscriptMs = now - state.lastUserTranscriptAtMs;
-      const sincePromptMs = state.lastPromptShownAtMs ? now - state.lastPromptShownAtMs : Infinity;
-      if (sinceTranscriptMs <= 3e4 && sincePromptMs >= 45e3) {
-        showLocalFallbackPrompt();
-      }
-    }, 15e3);
   }
   function stopSignalCapture() {
     chrome.runtime.sendMessage({ type: "STOP_AUDIO_CAPTURE" }).catch(() => {
@@ -407,10 +390,6 @@
     if (state.diagnosticInterval) {
       clearInterval(state.diagnosticInterval);
       state.diagnosticInterval = null;
-    }
-    if (state.localPromptInterval) {
-      clearInterval(state.localPromptInterval);
-      state.localPromptInterval = null;
     }
     state.userSpeaking = false;
     stopMicrophoneDetection();
@@ -575,9 +554,6 @@
       endOffsetMs
     });
     if (!payload) return;
-    if (payload.speaker === "user") {
-      state.lastUserTranscriptAtMs = eventTimeMs;
-    }
     emitEvent("transcript_segment", payload, captureConfidence);
   }
   var whisperActive = false;
@@ -717,7 +693,6 @@
   function showPrompt(prompt) {
     dismissCurrentPrompt();
     state.currentPrompt = prompt;
-    state.lastPromptShownAtMs = Date.now();
     const overlay = createOverlay();
     const promptEl = document.createElement("div");
     promptEl.className = "gleameet-prompt";
@@ -757,24 +732,6 @@
       dismissPrompt(prompt.prompt_id);
     }, 15e3);
   }
-  function showLocalFallbackPrompt() {
-    if (state.currentPrompt) return;
-    const prompt = {
-      prompt_id: `local-fallback-${Date.now()}`,
-      meeting_session_id: state.meetingSessionId || "local",
-      law_id: "LOCAL-FALLBACK",
-      prompt_type: "ask",
-      short_text: "Pause. Ask one clarifying question.",
-      rationale_text: "Transcript is active, so coaching should not stay silent.",
-      example_phrase: null,
-      shown_at: (/* @__PURE__ */ new Date()).toISOString(),
-      expired_at: new Date(Date.now() + 3e4).toISOString(),
-      display_state: "shown",
-      dismissed_at: null,
-      confidence: 0.5
-    };
-    showPrompt(prompt);
-  }
   function dismissCurrentPrompt() {
     if (state.currentPrompt) {
       dismissPrompt(state.currentPrompt.prompt_id);
@@ -796,7 +753,6 @@
     }
   }
   function ackPrompt(promptId, action) {
-    if (promptId.startsWith("local-fallback-")) return;
     chrome.runtime.sendMessage({
       type: "ACK_PROMPT",
       promptId,
