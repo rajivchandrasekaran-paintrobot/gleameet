@@ -606,20 +606,144 @@ let whisperActive = false;
 
 // --- Prompt Overlay UI (FR-055 through FR-063) ---
 
+const GLEAMEET_UI_HOST_ID = 'gleameet-ui-host';
+
+function getUiRoot(): ShadowRoot {
+  let host = document.getElementById(GLEAMEET_UI_HOST_ID) as HTMLDivElement | null;
+  if (!host) {
+    host = document.createElement('div');
+    host.id = GLEAMEET_UI_HOST_ID;
+    host.style.all = 'initial';
+    host.style.position = 'fixed';
+    host.style.inset = '0';
+    host.style.pointerEvents = 'none';
+    host.style.zIndex = '2147483647';
+    (document.documentElement || document.body).appendChild(host);
+  }
+
+  const root = host.shadowRoot ?? host.attachShadow({ mode: 'open' });
+  if (!root.getElementById('gleameet-ui-style')) {
+    const style = document.createElement('style');
+    style.id = 'gleameet-ui-style';
+    style.textContent = `
+      :host { all: initial; }
+      #gleameet-overlay {
+        position: fixed;
+        right: 24px;
+        bottom: 24px;
+        z-index: 2147483647;
+        pointer-events: none;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      }
+      #gleameet-overlay * { pointer-events: auto; box-sizing: border-box; }
+      .gleameet-prompt {
+        background: rgba(255, 255, 255, 0.96);
+        color: #1a1a2e;
+        border: 1px solid rgba(0, 102, 204, 0.2);
+        border-radius: 12px;
+        padding: 14px 18px;
+        max-width: 320px;
+        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.18);
+        backdrop-filter: blur(12px);
+        animation: gleameet-slide-in 0.3s ease-out;
+        margin-top: 8px;
+      }
+      .gleameet-prompt-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 6px;
+      }
+      .gleameet-prompt-label {
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: #0066cc;
+      }
+      .gleameet-prompt-law-code {
+        font-size: 10px;
+        font-weight: 700;
+        font-family: "SF Mono", Menlo, Consolas, monospace;
+        color: #ffffff;
+        background: #0066cc;
+        border-radius: 4px;
+        padding: 1px 6px;
+        letter-spacing: 0.3px;
+        flex-shrink: 0;
+      }
+      .gleameet-prompt-dismiss {
+        appearance: none;
+        border: none;
+        background: transparent;
+        color: #8b8ba0;
+        cursor: pointer;
+        font-size: 16px;
+        line-height: 1;
+        padding: 0 2px;
+      }
+      .gleameet-prompt-text {
+        font-size: 15px;
+        font-weight: 600;
+        line-height: 1.35;
+        margin-bottom: 4px;
+      }
+      .gleameet-prompt-rationale {
+        font-size: 12px;
+        color: #6b6b80;
+        line-height: 1.3;
+      }
+      .gleameet-status {
+        position: fixed;
+        top: 12px;
+        right: 12px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 10px;
+        border-radius: 16px;
+        font: 500 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        color: #1a1a2e;
+        background: rgba(255, 255, 255, 0.92);
+        backdrop-filter: blur(8px);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+      }
+      .gleameet-status-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+      }
+      .gleameet-status.active .gleameet-status-dot { background: #00804a; }
+      .gleameet-status.muted .gleameet-status-dot { background: #cc7a00; }
+      .gleameet-status.ready .gleameet-status-dot { background: #0066cc; }
+      .gleameet-status.error .gleameet-status-dot { background: #cc0000; }
+      @keyframes gleameet-slide-in {
+        from { opacity: 0; transform: translateY(12px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+    `;
+    root.appendChild(style);
+  }
+
+  return root;
+}
+
 /** Create the prompt overlay container */
 function createOverlay(): HTMLDivElement {
-  let overlay = document.getElementById('gleameet-overlay') as HTMLDivElement;
+  const root = getUiRoot();
+  let overlay = root.getElementById('gleameet-overlay') as HTMLDivElement | null;
   if (!overlay) {
     overlay = document.createElement('div');
     overlay.id = 'gleameet-overlay';
-    document.body.appendChild(overlay);
+    root.appendChild(overlay);
   }
   return overlay;
 }
 
 /** Remove the overlay container */
 function removeOverlay(): void {
-  const overlay = document.getElementById('gleameet-overlay');
+  const overlay = getUiRoot().getElementById('gleameet-overlay');
   if (overlay) overlay.remove();
 }
 
@@ -711,7 +835,7 @@ function showDebugPrompt(): void {
   dismissBtn.textContent = '×';
   dismissBtn.title = 'Dismiss';
   dismissBtn.addEventListener('click', () => {
-    const existing = document.getElementById('gleameet-overlay');
+    const existing = getUiRoot().getElementById('gleameet-overlay');
     existing?.remove();
   });
 
@@ -735,7 +859,7 @@ function showDebugPrompt(): void {
   overlay.appendChild(promptEl);
 
   state.promptDismissTimer = setTimeout(() => {
-    const existing = document.getElementById('gleameet-overlay');
+    const existing = getUiRoot().getElementById('gleameet-overlay');
     existing?.remove();
   }, 15000);
 }
@@ -749,7 +873,7 @@ function dismissCurrentPrompt(): void {
 
 /** Dismiss a specific prompt */
 function dismissPrompt(promptId: string): void {
-  const overlay = document.getElementById('gleameet-overlay');
+  const overlay = getUiRoot().getElementById('gleameet-overlay');
   if (overlay) {
     const el = overlay.querySelector(`[data-prompt-id="${promptId}"]`);
     if (el) el.remove();
@@ -780,6 +904,7 @@ function ackPrompt(promptId: string, action: 'shown' | 'dismissed' | 'muted'): v
 
 function injectStatusIndicator(): void {
   removeStatusIndicator();
+  const root = getUiRoot();
 
   const indicator = document.createElement('div');
   indicator.id = 'gleameet-status';
@@ -793,16 +918,16 @@ function injectStatusIndicator(): void {
 
   indicator.appendChild(dot);
   indicator.appendChild(label);
-  document.body.appendChild(indicator);
+  root.appendChild(indicator);
 }
 
 function removeStatusIndicator(): void {
-  const indicator = document.getElementById('gleameet-status');
+  const indicator = getUiRoot().getElementById('gleameet-status');
   if (indicator) indicator.remove();
 }
 
 function updateStatusIndicator(): void {
-  const indicator = document.getElementById('gleameet-status');
+  const indicator = getUiRoot().getElementById('gleameet-status');
   if (indicator) {
     indicator.className = `gleameet-status ${state.status}`;
     const label = indicator.querySelector('span:last-child');
