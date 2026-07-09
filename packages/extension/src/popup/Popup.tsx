@@ -224,10 +224,43 @@ export const Popup: React.FC = () => {
     chrome.runtime.sendMessage({ type: 'DEBUG_SHOW_PROMPT' });
   };
 
-  const ensureToken = (): Promise<void> => new Promise(resolve => {
-    chrome.storage.local.get(['sessionToken'], (items) => {
-      if (items.sessionToken) setSessionToken(items.sessionToken);
-      resolve();
+  const ensureToken = (): Promise<void> => new Promise((resolve, reject) => {
+    chrome.storage.local.get(['sessionToken', 'userId'], (items) => {
+      if (items.sessionToken) {
+        setSessionToken(items.sessionToken);
+        setState(prev => ({
+          ...prev,
+          authenticated: true,
+          userId: items.userId || prev.userId,
+        }));
+        resolve();
+        return;
+      }
+
+      chrome.identity.getAuthToken({ interactive: false }, (token) => {
+        if (chrome.runtime.lastError || !token) {
+          reject(new Error('Sign in required'));
+          return;
+        }
+
+        chrome.runtime.sendMessage({ type: 'AUTHENTICATE', googleIdToken: token }, (response) => {
+          if (response?.ok) {
+            setState(prev => ({
+              ...prev,
+              authenticated: true,
+              userId: response.userId || prev.userId,
+              status: response.status || prev.status,
+              meetingDetected: response.meetingDetected ?? prev.meetingDetected,
+              meetingSessionId: response.meetingSessionId || prev.meetingSessionId,
+              platform: response.platform || prev.platform,
+            }));
+            resolve();
+            return;
+          }
+
+          reject(new Error(response?.error || 'Sign in required'));
+        });
+      });
     });
   });
 
