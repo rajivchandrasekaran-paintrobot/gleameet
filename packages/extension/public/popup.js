@@ -24634,26 +24634,18 @@
     const [error, setError] = (0, import_react.useState)(null);
     const [deletingId, setDeletingId] = (0, import_react.useState)(null);
     (0, import_react.useEffect)(() => {
-      chrome.storage.local.get(["sessionToken", "userId"], (items) => {
-        if (items.sessionToken) {
-          setSessionToken(items.sessionToken);
-          setState((prev) => ({
-            ...prev,
-            authenticated: true,
-            userId: items.userId || prev.userId
-          }));
-        }
-      });
-      chrome.runtime.sendMessage({ type: "GET_STATUS" }, (response) => {
-        if (response) {
+      let statusPoll = null;
+      const refreshStatus = () => {
+        chrome.runtime.sendMessage({ type: "GET_STATUS" }, (response) => {
+          if (!response) return;
           const isAuthenticated = response.authenticated || false;
           setState((prev) => ({
             ...prev,
             status: response.status || "off",
             meetingDetected: response.meetingDetected ?? false,
             meetingSessionId: response.meetingSessionId || null,
-            authenticated: isAuthenticated,
-            userId: response.userId || null,
+            authenticated: isAuthenticated || prev.authenticated,
+            userId: response.userId || prev.userId,
             platform: response.platform || null
           }));
           if (!isAuthenticated) {
@@ -24664,7 +24656,7 @@
                     setState((prev) => ({
                       ...prev,
                       authenticated: true,
-                      userId: res.userId,
+                      userId: res.userId || prev.userId,
                       status: res.status || prev.status,
                       meetingDetected: res.meetingDetected ?? prev.meetingDetected,
                       meetingSessionId: res.meetingSessionId || prev.meetingSessionId,
@@ -24675,8 +24667,20 @@
               }
             });
           }
+        });
+      };
+      chrome.storage.local.get(["sessionToken", "userId"], (items) => {
+        if (items.sessionToken) {
+          setSessionToken(items.sessionToken);
+          setState((prev) => ({
+            ...prev,
+            authenticated: true,
+            userId: items.userId || prev.userId
+          }));
         }
       });
+      refreshStatus();
+      statusPoll = setInterval(refreshStatus, 2e3);
       const listener = (message) => {
         if (message.type === "STATUS_UPDATE") {
           setState((prev) => ({
@@ -24689,7 +24693,10 @@
         }
       };
       chrome.runtime.onMessage.addListener(listener);
-      return () => chrome.runtime.onMessage.removeListener(listener);
+      return () => {
+        chrome.runtime.onMessage.removeListener(listener);
+        if (statusPoll) clearInterval(statusPoll);
+      };
     }, []);
     const handleSignIn = () => {
       chrome.identity.getAuthToken({ interactive: false }, (cachedToken) => {

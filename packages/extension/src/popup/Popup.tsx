@@ -80,6 +80,45 @@ export const Popup: React.FC = () => {
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
+    let statusPoll: ReturnType<typeof setInterval> | null = null;
+
+    const refreshStatus = () => {
+      chrome.runtime.sendMessage({ type: 'GET_STATUS' }, (response) => {
+        if (!response) return;
+
+        const isAuthenticated = response.authenticated || false;
+        setState(prev => ({
+          ...prev,
+          status: response.status || 'off',
+          meetingDetected: response.meetingDetected ?? false,
+          meetingSessionId: response.meetingSessionId || null,
+          authenticated: isAuthenticated || prev.authenticated,
+          userId: response.userId || prev.userId,
+          platform: response.platform || null,
+        }));
+
+        if (!isAuthenticated) {
+          chrome.identity.getAuthToken({ interactive: false }, (token) => {
+            if (!chrome.runtime.lastError && token) {
+              chrome.runtime.sendMessage({ type: 'AUTHENTICATE', googleIdToken: token }, (res) => {
+                if (res?.ok) {
+                  setState(prev => ({
+                    ...prev,
+                    authenticated: true,
+                    userId: res.userId || prev.userId,
+                    status: res.status || prev.status,
+                    meetingDetected: res.meetingDetected ?? prev.meetingDetected,
+                    meetingSessionId: res.meetingSessionId || prev.meetingSessionId,
+                    platform: res.platform || prev.platform,
+                  }));
+                }
+              });
+            }
+          });
+        }
+      });
+    };
+
     // Load session token from storage into api-client (popup has its own memory, separate from service worker)
     chrome.storage.local.get(['sessionToken', 'userId'], (items) => {
       if (items.sessionToken) {
@@ -92,43 +131,8 @@ export const Popup: React.FC = () => {
       }
     });
 
-    // Get current status from background
-    chrome.runtime.sendMessage({ type: 'GET_STATUS' }, (response) => {
-      if (response) {
-        const isAuthenticated = response.authenticated || false;
-        setState(prev => ({
-          ...prev,
-          status: response.status || 'off',
-          meetingDetected: response.meetingDetected ?? false,
-          meetingSessionId: response.meetingSessionId || null,
-          authenticated: isAuthenticated,
-          userId: response.userId || null,
-          platform: response.platform || null,
-        }));
-
-        // If not yet authenticated, try silently — works if Chrome profile already has consent
-        if (!isAuthenticated) {
-          chrome.identity.getAuthToken({ interactive: false }, (token) => {
-            if (!chrome.runtime.lastError && token) {
-              chrome.runtime.sendMessage({ type: 'AUTHENTICATE', googleIdToken: token }, (res) => {
-                if (res?.ok) {
-                  setState(prev => ({
-                    ...prev,
-                    authenticated: true,
-                    userId: res.userId,
-                    status: res.status || prev.status,
-                    meetingDetected: res.meetingDetected ?? prev.meetingDetected,
-                    meetingSessionId: res.meetingSessionId || prev.meetingSessionId,
-                    platform: res.platform || prev.platform,
-                  }));
-                }
-              });
-            }
-            // If it fails silently, user will see the Sign In button as fallback
-          });
-        }
-      }
-    });
+    refreshStatus();
+    statusPoll = setInterval(refreshStatus, 2000);
 
     // Listen for status updates
     const listener = (message: any) => {
@@ -143,7 +147,10 @@ export const Popup: React.FC = () => {
       }
     };
     chrome.runtime.onMessage.addListener(listener);
-    return () => chrome.runtime.onMessage.removeListener(listener);
+    return () => {
+      chrome.runtime.onMessage.removeListener(listener);
+      if (statusPoll) clearInterval(statusPoll);
+    };
   }, []);
 
   const handleSignIn = () => {
