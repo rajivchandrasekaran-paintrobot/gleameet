@@ -113,9 +113,10 @@ export async function rankAndSelectPrompt(
 
   if (candidates.length === 0) return null;
 
-  // Sort by score descending, select top candidate (FR-045: at most one)
+  // Select one prompt with diversity-weighted randomness among the strongest
+  // candidates so one law does not monopolize the nudge stream.
   candidates.sort((a, b) => b.score - a.score);
-  const selected = candidates[0];
+  const selected = selectCandidateWithDiversity(candidates, state);
 
   // SR-006: Favor silence over low-confidence coaching
   if (selected.score < 0.1) return null;
@@ -211,6 +212,37 @@ function computeRepeatPenalty(trigger: LawTrigger, state: MeetingState): number 
   }
 
   return 0;
+}
+
+function selectCandidateWithDiversity(
+  candidates: RankedCandidate[],
+  state: MeetingState
+): RankedCandidate {
+  const topScore = candidates[0]?.score ?? 0;
+  const recentLawIds = state.recent_prompt_law_ids || [];
+  const lastLawId = recentLawIds[recentLawIds.length - 1];
+  const scoreFloor = Math.max(0.1, topScore - 0.18);
+  const eligible = candidates.filter((candidate) => candidate.score >= scoreFloor);
+
+  let totalWeight = 0;
+  const weighted = eligible.map((candidate) => {
+    const seenRecently = recentLawIds.includes(candidate.trigger.law_id);
+    const sameAsLast = lastLawId === candidate.trigger.law_id;
+    const diversityMultiplier = sameAsLast ? 0.2 : (seenRecently ? 0.7 : 1.25);
+    const weight = Math.max(0.01, candidate.score + 0.05) * diversityMultiplier;
+    totalWeight += weight;
+    return { candidate, weight };
+  });
+
+  let draw = Math.random() * totalWeight;
+  for (const entry of weighted) {
+    draw -= entry.weight;
+    if (draw <= 0) {
+      return entry.candidate;
+    }
+  }
+
+  return weighted[weighted.length - 1]?.candidate || candidates[0];
 }
 
 /** Generate a personalized nudge using GPT-4o with transcript context */
