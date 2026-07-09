@@ -220,6 +220,10 @@ export const Popup: React.FC = () => {
     chrome.runtime.sendMessage({ type: 'UNMUTE_COACHING' });
   };
 
+  const handleDebugPrompt = () => {
+    chrome.runtime.sendMessage({ type: 'DEBUG_SHOW_PROMPT' });
+  };
+
   const ensureToken = (): Promise<void> => new Promise(resolve => {
     chrome.storage.local.get(['sessionToken'], (items) => {
       if (items.sessionToken) setSessionToken(items.sessionToken);
@@ -678,6 +682,12 @@ export const Popup: React.FC = () => {
               <p style={{ fontSize: '13px', color: '#cc0000', textAlign: 'center' }}>
                 Connection error. Please try again.
               </p>
+            )}
+
+            {state.meetingDetected && (
+              <button className="btn btn-secondary" onClick={handleDebugPrompt}>
+                Test Prompt
+              </button>
             )}
           </>
         )}
