@@ -805,12 +805,15 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     case 'AUDIO_TRANSCRIPT_RESULT': {
       whisperActive = true;
       const stream = message.stream as 'mic' | 'tab';
-      const candidateSpeaker = stream === 'mic' ? 'user' : 'other';
+      const candidateSpeaker =
+        stream === 'mic'
+          ? 'user'
+          : (state.platform === 'google_meet' && state.userSpeaking ? 'user' : 'other');
       emitTranscriptSegment(
         message.text || '',
         candidateSpeaker,
         stream,
-        stream === 'mic' ? 0.85 : 0.75,
+        stream === 'mic' ? 0.85 : (candidateSpeaker === 'user' ? 0.8 : 0.75),
         {
           startOffsetMs: message.startOffsetMs,
           endOffsetMs: message.endOffsetMs,
