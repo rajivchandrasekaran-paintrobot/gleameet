@@ -1,7 +1,7 @@
 import { LawRegistryEntry, LawTrigger, TriggerCondition, TriggerLogic } from '@gleameet/shared';
 import { loadActiveLaws } from '@gleameet/law-registry';
 import { FeatureSnapshot } from '../features/feature-engine';
-import { MeetingState, isLawOnCooldown, setLawCooldown } from '../db/redis';
+import { MeetingState, isLawOnCooldown } from '../db/redis';
 import { v4 as uuidv4 } from 'uuid';
 
 /**
@@ -74,9 +74,6 @@ async function evaluateSingleLaw(
       featureSnapshot[input] = features[input] as number | boolean;
     }
   }
-
-  // Set cooldown for this law (FR-042)
-  await setLawCooldown(meetingSessionId, law.law_id, law.cooldown_seconds);
 
   const trigger: LawTrigger = {
     trigger_id: uuidv4(),

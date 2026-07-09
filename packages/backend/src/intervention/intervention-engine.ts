@@ -5,6 +5,7 @@ import {
   MeetingState,
   isGlobalCooldownActive,
   setGlobalCooldown,
+  setLawCooldown,
   incrementPromptCount,
   getPromptCount,
   isUserSpeaking,
@@ -133,6 +134,7 @@ export async function rankAndSelectPrompt(
     selected.prompt.short_text = personalized.short_text;
     selected.prompt.rationale_text = personalized.rationale_text;
     console.log(`[INTERVENTION] Nudge text: "${personalized.short_text}" | rationale: "${personalized.rationale_text}"`);
+    await setLawCooldown(meetingSessionId, selected.trigger.law_id, law.cooldown_seconds);
   }
 
   // Set global cooldown (FR-046)

@@ -775,48 +775,6 @@
     };
     showPrompt(prompt);
   }
-  function showDebugPrompt() {
-    dismissCurrentPrompt();
-    const overlay = createOverlay();
-    const promptEl = document.createElement("div");
-    promptEl.className = "gleameet-prompt";
-    promptEl.setAttribute("data-prompt-id", "debug-prompt");
-    const header = document.createElement("div");
-    header.className = "gleameet-prompt-header";
-    const label = document.createElement("span");
-    label.className = "gleameet-prompt-label";
-    label.textContent = "Coach \xB7 debug";
-    const lawCode = document.createElement("span");
-    lawCode.className = "gleameet-prompt-law-code";
-    lawCode.textContent = "DEBUG";
-    lawCode.title = "Debug prompt";
-    const dismissBtn = document.createElement("button");
-    dismissBtn.className = "gleameet-prompt-dismiss";
-    dismissBtn.textContent = "\xD7";
-    dismissBtn.title = "Dismiss";
-    dismissBtn.addEventListener("click", () => {
-      const existing = getUiRoot().getElementById("gleameet-overlay");
-      existing?.remove();
-    });
-    header.appendChild(label);
-    header.appendChild(lawCode);
-    header.appendChild(dismissBtn);
-    const text = document.createElement("div");
-    text.className = "gleameet-prompt-text";
-    text.textContent = "Debug prompt render check.";
-    const rationale = document.createElement("div");
-    rationale.className = "gleameet-prompt-rationale";
-    rationale.textContent = "If you can see this, overlay rendering works.";
-    promptEl.appendChild(header);
-    promptEl.appendChild(text);
-    promptEl.appendChild(rationale);
-    overlay.innerHTML = "";
-    overlay.appendChild(promptEl);
-    state.promptDismissTimer = setTimeout(() => {
-      const existing = getUiRoot().getElementById("gleameet-overlay");
-      existing?.remove();
-    }, 15e3);
-  }
   function dismissCurrentPrompt() {
     if (state.currentPrompt) {
       dismissPrompt(state.currentPrompt.prompt_id);
@@ -929,14 +887,6 @@
       }
       case "DISMISS_ALL_PROMPTS":
         dismissCurrentPrompt();
-        break;
-      case "DEBUG_SHOW_PROMPT":
-        state.meetingDetected = true;
-        if (state.status === "off") {
-          state.status = "ready";
-          updateStatusIndicator();
-        }
-        showDebugPrompt();
         break;
       case "GET_CONTENT_STATUS":
         sendResponse({

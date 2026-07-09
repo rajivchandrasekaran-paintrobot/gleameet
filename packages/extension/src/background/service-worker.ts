@@ -159,10 +159,6 @@ async function handleMessage(message: any): Promise<any> {
       handleStartAudioCapture(message.meetingSessionId);
       return { ok: true };
 
-    case 'DEBUG_SHOW_PROMPT':
-      await sendMessageToMeetingTabs({ type: 'DEBUG_SHOW_PROMPT' });
-      return { ok: true };
-
     case 'STOP_AUDIO_CAPTURE':
       // Forward stop to offscreen document
       chrome.runtime.sendMessage({ type: 'STOP_MIC_CAPTURE' }).catch(() => {});

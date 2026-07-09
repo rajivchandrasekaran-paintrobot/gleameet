@@ -24764,9 +24764,6 @@
     const handleUnmute = () => {
       chrome.runtime.sendMessage({ type: "UNMUTE_COACHING" });
     };
-    const handleDebugPrompt = () => {
-      chrome.runtime.sendMessage({ type: "DEBUG_SHOW_PROMPT" });
-    };
     const ensureToken = () => new Promise((resolve, reject) => {
       chrome.storage.local.get(["sessionToken", "userId"], (items) => {
         if (items.sessionToken) {
@@ -25136,8 +25133,7 @@
           /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-danger", onClick: handleStopCoaching, children: "Stop Coaching" })
         ] }),
         state.status === "off" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { style: { fontSize: "13px", color: "#6b6b80", textAlign: "center" }, children: "Join a supported Google Meet, Teams, or Zoom web meeting to start coaching" }),
-        state.status === "error" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { style: { fontSize: "13px", color: "#cc0000", textAlign: "center" }, children: "Connection error. Please try again." }),
-        state.meetingDetected && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-secondary", onClick: handleDebugPrompt, children: "Test Prompt" })
+        state.status === "error" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { style: { fontSize: "13px", color: "#cc0000", textAlign: "center" }, children: "Connection error. Please try again." })
       ] }) }),
       state.authenticated && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { textAlign: "center", marginTop: "12px" }, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
         "a",

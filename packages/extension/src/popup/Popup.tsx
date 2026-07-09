@@ -228,10 +228,6 @@ export const Popup: React.FC = () => {
     chrome.runtime.sendMessage({ type: 'UNMUTE_COACHING' });
   };
 
-  const handleDebugPrompt = () => {
-    chrome.runtime.sendMessage({ type: 'DEBUG_SHOW_PROMPT' });
-  };
-
   const ensureToken = (): Promise<void> => new Promise((resolve, reject) => {
     chrome.storage.local.get(['sessionToken', 'userId'], (items) => {
       if (items.sessionToken) {
@@ -726,11 +722,6 @@ export const Popup: React.FC = () => {
               </p>
             )}
 
-            {state.meetingDetected && (
-              <button className="btn btn-secondary" onClick={handleDebugPrompt}>
-                Test Prompt
-              </button>
-            )}
           </>
         )}
       </div>
