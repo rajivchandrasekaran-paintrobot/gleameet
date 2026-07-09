@@ -118,6 +118,15 @@
           reason: "non_user_context"
         };
       }
+      if (params.source === "mic") {
+        return {
+          source: params.source,
+          candidate_speaker: "user",
+          final_speaker: "user",
+          passes_user_attribution: true,
+          reason: "trusted_mic_capture"
+        };
+      }
       const overlapMatch = this.findBestNonUserOverlap(params.text, params.timestampMs);
       if (overlapMatch && overlapMatch.score >= STRONG_OVERLAP_SCORE) {
         return {

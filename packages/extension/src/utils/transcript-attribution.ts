@@ -102,6 +102,18 @@ export class TranscriptAttributionTracker {
       };
     }
 
+    // Mic capture is the strongest available signal for the coached user's own speech.
+    // Do not down-rank it to "other" just because similar words appeared recently in tab audio.
+    if (params.source === 'mic') {
+      return {
+        source: params.source,
+        candidate_speaker: 'user',
+        final_speaker: 'user',
+        passes_user_attribution: true,
+        reason: 'trusted_mic_capture',
+      };
+    }
+
     const overlapMatch = this.findBestNonUserOverlap(params.text, params.timestampMs);
     if (overlapMatch && overlapMatch.score >= STRONG_OVERLAP_SCORE) {
       return {
