@@ -777,7 +777,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     }
 
     case 'SHOW_PROMPT':
-      if (state.status === 'active') {
+      if (state.status !== 'muted') {
+        state.meetingDetected = true;
+        if (state.status !== 'active') {
+          state.status = 'active';
+          updateStatusIndicator();
+        }
         showPrompt(message.prompt);
       }
       break;
