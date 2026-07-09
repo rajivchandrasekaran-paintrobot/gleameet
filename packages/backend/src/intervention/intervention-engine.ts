@@ -48,9 +48,7 @@ export async function rankAndSelectPrompt(
   const currentCount = await getPromptCount(meetingSessionId);
   if (currentCount >= maxRate) return null;
 
-  if (triggers.length === 0) {
-    return maybeGenerateFallbackPrompt(meetingSessionId, state);
-  }
+  if (triggers.length === 0) return null;
 
   // FR-050: Check if user is speaking (suppress non-urgent prompts)
   const speaking = await isUserSpeaking(meetingSessionId);
@@ -120,7 +118,7 @@ export async function rankAndSelectPrompt(
   const selected = candidates[0];
 
   // SR-006: Favor silence over low-confidence coaching
-  if (selected.score < 0.2) return null;
+  if (selected.score < 0.1) return null;
 
   // Generate personalized nudge via LLM (non-blocking fallback to static text)
   const law = loadLawById(selected.trigger.law_id);
@@ -159,71 +157,6 @@ export async function rankAndSelectPrompt(
   console.log(`[INTERVENTION] Selected prompt: law=${selected.trigger.law_id} score=${selected.score.toFixed(3)} text="${selected.prompt.short_text}"`);
 
   return selected.prompt;
-}
-
-async function maybeGenerateFallbackPrompt(
-  meetingSessionId: string,
-  state: MeetingState
-): Promise<PromptEvent | null> {
-  const elapsedMs = Date.now() - new Date(state.started_at).getTime();
-  if (elapsedMs < 45000) return null;
-
-  // Only step in if there is enough user activity to justify a live nudge.
-  if (state.transcript_segment_count < 3 && state.turn_count < 4) return null;
-
-  let shortText = 'Pause. Ask one clarifying question.';
-  let rationaleText = 'Transcript is active but no coaching cue crossed a stricter law threshold.';
-  let lawId = 'FALLBACK';
-  let promptType: PromptType = 'ask';
-
-  if (state.acknowledgment_count === 0 && state.turn_count >= 4) {
-    shortText = 'Acknowledge their point, then make yours.';
-    rationaleText = 'Several turns passed without an acknowledgment cue from you.';
-    lawId = 'C-01-FALLBACK';
-    promptType = 'acknowledge' as PromptType;
-  } else if (state.option_count_presented > 1 && !state.default_recommendation_present) {
-    shortText = 'Name the default option clearly.';
-    rationaleText = 'Multiple options are in play without a default recommendation.';
-    lawId = 'T-02-FALLBACK';
-    promptType = 'close' as PromptType;
-  } else if (!state.owner_assignment_present && !state.deadline_present && state.turn_count >= 6) {
-    shortText = 'Lock the next step with an owner and date.';
-    rationaleText = 'The discussion is moving, but no action-owner cue is present yet.';
-    lawId = 'T-03-FALLBACK';
-    promptType = 'close' as PromptType;
-  } else if (state.question_count === 0 && state.turn_count >= 4) {
-    shortText = 'Ask one question before pushing your point.';
-    rationaleText = 'You have several turns in without a question cue yet.';
-    lawId = 'K-01-FALLBACK';
-    promptType = 'ask';
-  }
-
-  await setGlobalCooldown(meetingSessionId, 20);
-  await incrementPromptCount(meetingSessionId);
-
-  state.prompts_shown_count++;
-  state.last_prompt_shown_at = new Date().toISOString();
-  const recentLawIds = state.recent_prompt_law_ids || [];
-  recentLawIds.push(lawId);
-  state.recent_prompt_law_ids = recentLawIds.slice(-RECENT_PROMPT_LAW_MEMORY);
-
-  const promptEvent: PromptEvent = {
-    prompt_id: uuidv4(),
-    meeting_session_id: meetingSessionId,
-    law_id: lawId,
-    prompt_type: promptType,
-    short_text: shortText,
-    rationale_text: rationaleText,
-    example_phrase: null,
-    shown_at: new Date().toISOString(),
-    expired_at: new Date(Date.now() + 30000).toISOString(),
-    display_state: 'pending',
-    dismissed_at: null,
-    confidence: 0.55,
-  };
-
-  console.log(`[INTERVENTION] Fallback prompt: law=${lawId} text="${shortText}"`);
-  return promptEvent;
 }
 
 /** Validate prompt text length constraints (FR-058, FR-059, FR-060) */
