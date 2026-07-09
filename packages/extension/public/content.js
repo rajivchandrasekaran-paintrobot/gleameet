@@ -802,13 +802,15 @@
         break;
       }
       case "SHOW_PROMPT":
-        if (state.status !== "muted") {
+        if (state.status !== "muted" && detectMeeting()) {
           state.meetingDetected = true;
           if (state.status !== "active") {
             state.status = "active";
             updateStatusIndicator();
           }
           showPrompt(message.prompt);
+        } else if (!detectMeeting()) {
+          dismissCurrentPrompt();
         }
         break;
       case "COACHING_STARTED":

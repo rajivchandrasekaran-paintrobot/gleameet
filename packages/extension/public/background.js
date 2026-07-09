@@ -536,6 +536,9 @@ async function sendMessageToMeetingTabs(message) {
       if (!context && message.type !== "DISMISS_ALL_PROMPTS") {
         return;
       }
+      if (!context?.meetingDetected && message.type !== "DISMISS_ALL_PROMPTS") {
+        return;
+      }
       if (tab.id && state.status === "active" && state.meetingSessionId && state.userId && message.type !== "COACHING_STARTED" && context?.status !== "active") {
         try {
           await chrome.tabs.sendMessage(tab.id, {

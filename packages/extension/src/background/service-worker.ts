@@ -562,6 +562,10 @@ async function sendMessageToMeetingTabs(message: MeetingTabMessage): Promise<voi
         return;
       }
 
+      if (!context?.meetingDetected && message.type !== 'DISMISS_ALL_PROMPTS') {
+        return;
+      }
+
       if (
         tab.id &&
         state.status === 'active' &&
