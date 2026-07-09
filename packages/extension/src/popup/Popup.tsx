@@ -92,7 +92,7 @@ export const Popup: React.FC = () => {
           status: response.status || 'off',
           meetingDetected: response.meetingDetected ?? false,
           meetingSessionId: response.meetingSessionId || null,
-          authenticated: isAuthenticated || prev.authenticated,
+          authenticated: isAuthenticated,
           userId: response.userId || prev.userId,
           platform: response.platform || null,
         }));
