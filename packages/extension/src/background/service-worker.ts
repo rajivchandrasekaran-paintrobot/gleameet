@@ -42,12 +42,15 @@ const state: SessionState = {
   batchInterval: null,
 };
 
-// Restore auth token from chrome.storage on startup
-chrome.storage.local.get(['sessionToken', 'userId'], (data) => {
-  if (data.sessionToken) {
-    setSessionToken(data.sessionToken);
-    state.userId = data.userId || null;
-  }
+const authStateReady = new Promise<void>((resolve) => {
+  // Restore auth token from chrome.storage on startup before status/auth checks run.
+  chrome.storage.local.get(['sessionToken', 'userId'], (data) => {
+    if (data.sessionToken) {
+      setSessionToken(data.sessionToken);
+      state.userId = data.userId || null;
+    }
+    resolve();
+  });
 });
 
 /** Listen for messages from content script and popup */
@@ -59,6 +62,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 });
 
 async function handleMessage(message: any): Promise<any> {
+  await authStateReady;
+
   switch (message.type) {
     case 'MEETING_DETECTED':
       state.meetingDetected = true;

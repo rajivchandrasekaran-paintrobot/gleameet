@@ -24551,6 +24551,12 @@
       google_id_token: googleIdToken
     });
     sessionToken = result.session_token;
+    if (typeof chrome !== "undefined" && chrome.storage?.local) {
+      chrome.storage.local.set({
+        sessionToken: result.session_token,
+        userId: result.user_id
+      });
+    }
     return result;
   }
   async function getHistory() {
@@ -24627,8 +24633,15 @@
     const [error, setError] = (0, import_react.useState)(null);
     const [deletingId, setDeletingId] = (0, import_react.useState)(null);
     (0, import_react.useEffect)(() => {
-      chrome.storage.local.get(["sessionToken"], (items) => {
-        if (items.sessionToken) setSessionToken(items.sessionToken);
+      chrome.storage.local.get(["sessionToken", "userId"], (items) => {
+        if (items.sessionToken) {
+          setSessionToken(items.sessionToken);
+          setState((prev) => ({
+            ...prev,
+            authenticated: true,
+            userId: items.userId || prev.userId
+          }));
+        }
       });
       chrome.runtime.sendMessage({ type: "GET_STATUS" }, (response) => {
         if (response) {

@@ -73,6 +73,12 @@ export async function createSession(googleIdToken: string): Promise<AuthSessionR
     google_id_token: googleIdToken,
   } as AuthSessionRequest);
   sessionToken = result.session_token;
+  if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+    chrome.storage.local.set({
+      sessionToken: result.session_token,
+      userId: result.user_id,
+    });
+  }
   return result;
 }
 

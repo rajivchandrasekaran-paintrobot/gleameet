@@ -56,6 +56,12 @@ async function createSession(googleIdToken) {
     google_id_token: googleIdToken
   });
   sessionToken = result.session_token;
+  if (typeof chrome !== "undefined" && chrome.storage?.local) {
+    chrome.storage.local.set({
+      sessionToken: result.session_token,
+      userId: result.user_id
+    });
+  }
   return result;
 }
 async function startMeeting(request) {
@@ -108,17 +114,21 @@ var state = {
   pollingInterval: null,
   batchInterval: null
 };
-chrome.storage.local.get(["sessionToken", "userId"], (data) => {
-  if (data.sessionToken) {
-    setSessionToken(data.sessionToken);
-    state.userId = data.userId || null;
-  }
+var authStateReady = new Promise((resolve) => {
+  chrome.storage.local.get(["sessionToken", "userId"], (data) => {
+    if (data.sessionToken) {
+      setSessionToken(data.sessionToken);
+      state.userId = data.userId || null;
+    }
+    resolve();
+  });
 });
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   handleMessage(message).then(sendResponse).catch((err) => sendResponse({ error: err.message }));
   return true;
 });
 async function handleMessage(message) {
+  await authStateReady;
   switch (message.type) {
     case "MEETING_DETECTED":
       state.meetingDetected = true;

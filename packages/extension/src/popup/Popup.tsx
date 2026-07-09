@@ -80,8 +80,15 @@ export const Popup: React.FC = () => {
 
   useEffect(() => {
     // Load session token from storage into api-client (popup has its own memory, separate from service worker)
-    chrome.storage.local.get(['sessionToken'], (items) => {
-      if (items.sessionToken) setSessionToken(items.sessionToken);
+    chrome.storage.local.get(['sessionToken', 'userId'], (items) => {
+      if (items.sessionToken) {
+        setSessionToken(items.sessionToken);
+        setState(prev => ({
+          ...prev,
+          authenticated: true,
+          userId: items.userId || prev.userId,
+        }));
+      }
     });
 
     // Get current status from background
