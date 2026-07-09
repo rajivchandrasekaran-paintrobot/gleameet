@@ -557,6 +557,26 @@ async function sendMessageToMeetingTabs(message: MeetingTabMessage): Promise<voi
         return;
       }
 
+      if (
+        tab.id &&
+        state.status === 'active' &&
+        state.meetingSessionId &&
+        state.userId &&
+        message.type !== 'COACHING_STARTED' &&
+        context?.status !== 'active'
+      ) {
+        try {
+          await chrome.tabs.sendMessage(tab.id, {
+            type: 'COACHING_STARTED',
+            meetingSessionId: state.meetingSessionId,
+            userId: state.userId,
+            platform: state.platform,
+          });
+        } catch (_syncErr) {
+          // If the tab still isn't ready, the main message send below will no-op safely.
+        }
+      }
+
       try {
         await chrome.tabs.sendMessage(tab.id, message);
       } catch (_err) {
