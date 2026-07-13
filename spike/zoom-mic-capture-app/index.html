@@ -1,71 +1,31 @@
 <!DOCTYPE html>
 <html>
-<head><title>GleaMeet Zoom Mic-Capture Spike</title></head>
+<head>
+  <meta charset="utf-8" />
+  <title>GleaMeet Zoom Mic-Capture Spike</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
+    button { margin-right: 0.5rem; padding: 0.4rem 0.8rem; }
+    pre { background: #111; color: #eee; padding: 0.75rem; border-radius: 4px; max-height: 320px; overflow: auto; font-size: 12px; }
+    .row { margin: 0.5rem 0; }
+    .pill { display: inline-block; padding: 2px 8px; border-radius: 10px; background: #eee; font-size: 12px; margin-left: 6px; }
+  </style>
+</head>
 <body>
-  <h1>Zoom Mic-Capture Spike (Path B)</h1>
-  <p>Only probes the local user's own microphone — never taps other participants'
-  audio or the meeting's mixed stream. This is the privacy-preserving alternative to RTMS.</p>
-  <button id="probe">Start mic probe</button>
-  <button id="stop" disabled>Stop</button>
-  <pre id="log"></pre>
+  <h1>Zoom Mic-Capture Spike <span class="pill">Path B</span></h1>
+  <p>Probes the local user's own microphone only — never taps other participants or the meeting's mixed stream.</p>
+
+  <div class="row">
+    <button id="probe">Start mic probe</button>
+    <button id="stop" disabled>Stop</button>
+    <span id="status" class="pill">idle</span>
+  </div>
+
+  <pre id="log">Loading…</pre>
+
   <script src="https://appssdk.zoom.us/sdk.js"></script>
-  <script>
-    const log = (label, data) => {
-      document.getElementById('log').textContent += `\n${label}: ${typeof data === 'string' ? data : JSON.stringify(data, null, 2)}`;
-      console.log(label, data);
-    };
-
-    let stream, recorder, chunks = [];
-
-    window.onload = async () => {
-      try {
-        const zoomSdk = window.zoomSdk;
-        const config = await zoomSdk.config({
-          capabilities: ['getMeetingContext', 'getRunningContext', 'getUserContext'],
-        });
-        log('config', config);
-        log('meetingContext', await zoomSdk.getMeetingContext());
-        log('runningContext', await zoomSdk.getRunningContext());
-      } catch (err) {
-        log('ERROR (zoomSdk init)', err.message || err);
-      }
-    };
-
-    document.getElementById('probe').onclick = async () => {
-      try {
-        // Step: request mic access. Record whether this succeeds, and whether
-        // the track is 'live' or fails with NotReadableError (device held by
-        // the Zoom call itself — the device-conflict case from the plan).
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const track = stream.getAudioTracks()[0];
-        log('track.label', track.label);
-        log('track.readyState', track.readyState);
-
-        chunks = [];
-        recorder = new MediaRecorder(stream);
-        recorder.ondataavailable = (e) => {
-          chunks.push(e.data);
-          log('chunk received, bytes', e.data.size);
-        };
-        recorder.start(1000); // 1s chunks, mirrors the extension's chunked capture
-        log('MediaRecorder', 'started');
-        document.getElementById('stop').disabled = false;
-        document.getElementById('probe').disabled = true;
-      } catch (err) {
-        // NotReadableError here is the exact device-conflict signal the plan
-        // asks us to test: does getUserMedia fail while Zoom holds the mic
-        // for the call itself?
-        log('ERROR (getUserMedia)', `${err.name}: ${err.message}`);
-      }
-    };
-
-    document.getElementById('stop').onclick = () => {
-      recorder?.stop();
-      stream?.getTracks().forEach((t) => t.stop());
-      log('stopped', `total chunks: ${chunks.length}`);
-      document.getElementById('stop').disabled = true;
-      document.getElementById('probe').disabled = false;
-    };
-  </script>
+  <!-- Page logic lives in app.js: the CSP (script-src 'self' + Zoom origins)
+       blocks inline scripts, so an inline block here would silently never run. -->
+  <script src="/app.js"></script>
 </body>
 </html>

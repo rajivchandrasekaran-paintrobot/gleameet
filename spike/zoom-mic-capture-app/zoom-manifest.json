@@ -1,0 +1,32 @@
+{
+  "name": "GleaMeet Mic-Capture Spike",
+  "short_name": "GleaMeet Mic",
+  "description": "Spike: probe local-mic capture (Path B) inside the Zoom desktop client.",
+  "type": "general",
+  "version": "1.0.0",
+  "home_url": "https://localhost:3443",
+  "scopes": [
+    "user:read",
+    "meeting:read"
+  ],
+  "in_client_url": "https://localhost:3443",
+  "tabs": [
+    {
+      "name": "Mic Capture",
+      "path": "/"
+    }
+  ],
+  "capabilities": {
+    "getMeetingContext": true,
+    "getRunningContext": true,
+    "getUserContext": true
+  },
+  "permissions": {
+    "microphone": "required"
+  },
+  "dev_allow_local": true,
+  "local_test": {
+    "https_port": 3443,
+    "use_self_signed": true
+  }
+}

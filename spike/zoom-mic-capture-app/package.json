@@ -4,15 +4,16 @@
   "description": "Throwaway spike: probe Path B (mic-in-webview) capture inside a Zoom App, independent of RTMS.",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node --env-file-if-exists=.env server.js",
+    "dev": "node --env-file-if-exists=.env server.js"
   },
-  "keywords": [],
+  "keywords": ["zoom", "zoom-apps-sdk", "webrtc", "getusermedia"],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
     "express": "^5.2.1",
-    "helmet": "^8.2.0"
+    "helmet": "^8.2.0",
+    "selfsigned": "^2.4.1"
   }
 }
