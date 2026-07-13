@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>GleaMeet Zoom Mic-Capture Spike</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
+    button { margin-right: 0.5rem; padding: 0.4rem 0.8rem; }
+    pre { background: #111; color: #eee; padding: 0.75rem; border-radius: 4px; max-height: 320px; overflow: auto; font-size: 12px; }
+    .row { margin: 0.5rem 0; }
+    .pill { display: inline-block; padding: 2px 8px; border-radius: 10px; background: #eee; font-size: 12px; margin-left: 6px; }
+  </style>
+</head>
+<body>
+  <h1>Zoom Mic-Capture Spike <span class="pill">Path B</span></h1>
+  <p>Probes the local user's own microphone only — never taps other participants or the meeting's mixed stream.</p>
+
+  <div class="row">
+    <button id="probe">Start mic probe</button>
+    <button id="stop" disabled>Stop</button>
+    <span id="status" class="pill">idle</span>
+  </div>
+
+  <pre id="log">Loading…</pre>
+
+  <script src="https://appssdk.zoom.us/sdk.js"></script>
+  <!-- Page logic lives in app.js: the CSP (script-src 'self' + Zoom origins)
+       blocks inline scripts, so an inline block here would silently never run. -->
+  <script src="/app.js"></script>
+</body>
+</html>
