@@ -10,3 +10,4 @@ coverage/
 *.log
 extension-key.pem
 *.tsbuildinfo
+.certs/
