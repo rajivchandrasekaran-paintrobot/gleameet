@@ -213,7 +213,12 @@ async function handleMessage(message, sender) {
       broadcastStatus();
       return { status: "active" };
     case "INGEST_EVENT":
-      if (state.status === "active" && message.event) {
+      if (message.event && state.meetingSessionId && message.event.meeting_session_id === state.meetingSessionId && state.status !== "off" && state.status !== "error") {
+        if (state.status !== "active" && !state.coachingPausedByUser && !state.promptsMutedByUser) {
+          state.status = "active";
+          startSessionIntervals();
+          broadcastStatus();
+        }
         state.eventBuffer.push(message.event);
       }
       return { buffered: true };

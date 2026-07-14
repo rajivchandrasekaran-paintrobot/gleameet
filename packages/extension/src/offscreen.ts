@@ -117,18 +117,14 @@ function stopTabCapture(): void {
 
 function startRecording(stream: MediaStream, streamType: string, meetingSessionId: string, sessionToken: string, apiBase: string): { recorder: MediaRecorder; interval: ReturnType<typeof setInterval> } {
   const recorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
-  let chunks: Blob[] = [];
   let chunkStartedAt = Date.now();
 
-  recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
-
-  recorder.onstop = async () => {
-    const blob = new Blob(chunks, { type: "audio/webm" });
+  recorder.ondataavailable = async e => {
+    if (!e.data || e.data.size < 1000) return;
+    const blob = e.data;
     const chunkEndedAt = Date.now();
     const chunkStart = chunkStartedAt;
-    chunks = [];
     chunkStartedAt = Date.now();
-    if (blob.size < 1000) return;
 
     const form = new FormData();
     form.append("audio", blob, "chunk.webm");
@@ -158,7 +154,9 @@ function startRecording(stream: MediaStream, streamType: string, meetingSessionI
 
   recorder.start();
   const interval = setInterval(() => {
-    if (recorder.state === "recording") { recorder.stop(); recorder.start(); }
+    if (recorder.state === "recording") {
+      try { recorder.requestData(); } catch (_) {}
+    }
   }, 10000);
 
   return { recorder, interval };

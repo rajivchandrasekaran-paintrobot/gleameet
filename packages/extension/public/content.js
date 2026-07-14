@@ -516,7 +516,7 @@
           const result = event.results[i];
           const text = result[0].transcript.trim();
           if (!text) continue;
-          if (result.isFinal && !whisperActive) {
+          if (result.isFinal && !isWhisperRecentlyActive()) {
             emitTranscriptSegment(text, "user", "web_speech", 0.9);
           }
         }
@@ -617,7 +617,13 @@
     if (!payload) return;
     emitEvent("transcript_segment", payload, captureConfidence);
   }
-  var whisperActive = false;
+  var lastWhisperTranscriptAt = 0;
+  function markWhisperActive() {
+    lastWhisperTranscriptAt = Date.now();
+  }
+  function isWhisperRecentlyActive() {
+    return Date.now() - lastWhisperTranscriptAt < 3e4;
+  }
   var GLEAMEET_UI_HOST_ID = "gleameet-ui-host";
   function getUiRoot() {
     let host = document.getElementById(GLEAMEET_UI_HOST_ID);
@@ -908,14 +914,14 @@
         startSignalCapture();
         break;
       case "WHISPER_ACTIVE":
-        whisperActive = true;
+        markWhisperActive();
         break;
       case "AUDIO_TRANSCRIPT_RESULT": {
-        whisperActive = true;
         const stream = message.stream;
         if (state.captureMode === "user_voice_only" && stream !== "mic") {
           break;
         }
+        markWhisperActive();
         const candidateSpeaker = stream === "mic" ? "user" : state.platform === "google_meet" && state.userSpeaking ? "user" : "other";
         emitTranscriptSegment(
           message.text || "",

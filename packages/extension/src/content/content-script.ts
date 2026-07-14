@@ -534,7 +534,7 @@ function startMicrophoneDetection(): void {
         const text = result[0].transcript.trim();
         if (!text) continue;
 
-        if (result.isFinal && !whisperActive) {
+        if (result.isFinal && !isWhisperRecentlyActive()) {
           emitTranscriptSegment(text, 'user', 'web_speech', 0.9);
         }
       }
@@ -699,8 +699,15 @@ function emitTranscriptSegment(
   emitEvent('transcript_segment', payload as unknown as Record<string, unknown>, captureConfidence);
 }
 
-// Whisper active flag — when true, suppress Web Speech API transcripts
-let whisperActive = false;
+let lastWhisperTranscriptAt = 0;
+
+function markWhisperActive(): void {
+  lastWhisperTranscriptAt = Date.now();
+}
+
+function isWhisperRecentlyActive(): boolean {
+  return Date.now() - lastWhisperTranscriptAt < 30000;
+}
 
 // --- Prompt Overlay UI (FR-055 through FR-063) ---
 
@@ -1050,15 +1057,15 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       break;
 
     case 'WHISPER_ACTIVE':
-      whisperActive = true;
+      markWhisperActive();
       break;
 
     case 'AUDIO_TRANSCRIPT_RESULT': {
-      whisperActive = true;
       const stream = message.stream as 'mic' | 'tab';
       if (state.captureMode === 'user_voice_only' && stream !== 'mic') {
         break;
       }
+      markWhisperActive();
       const candidateSpeaker =
         stream === 'mic'
           ? 'user'

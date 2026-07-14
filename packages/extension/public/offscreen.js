@@ -112,18 +112,13 @@
   }
   function startRecording(stream, streamType, meetingSessionId, sessionToken, apiBase) {
     const recorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
-    let chunks = [];
     let chunkStartedAt = Date.now();
-    recorder.ondataavailable = (e) => {
-      if (e.data.size > 0) chunks.push(e.data);
-    };
-    recorder.onstop = async () => {
-      const blob = new Blob(chunks, { type: "audio/webm" });
+    recorder.ondataavailable = async (e) => {
+      if (!e.data || e.data.size < 1e3) return;
+      const blob = e.data;
       const chunkEndedAt = Date.now();
       const chunkStart = chunkStartedAt;
-      chunks = [];
       chunkStartedAt = Date.now();
-      if (blob.size < 1e3) return;
       const form = new FormData();
       form.append("audio", blob, "chunk.webm");
       form.append("stream", streamType);
@@ -149,8 +144,10 @@
     recorder.start();
     const interval = setInterval(() => {
       if (recorder.state === "recording") {
-        recorder.stop();
-        recorder.start();
+        try {
+          recorder.requestData();
+        } catch (_) {
+        }
       }
     }, 1e4);
     return { recorder, interval };
