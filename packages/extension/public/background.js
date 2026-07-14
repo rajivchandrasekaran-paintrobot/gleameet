@@ -114,7 +114,8 @@ var state = {
   pollingInterval: null,
   batchInterval: null,
   captureMode: "full_meeting",
-  promptsMutedByUser: false
+  promptsMutedByUser: false,
+  coachingPausedByUser: false
 };
 var authStateReady = new Promise((resolve) => {
   chrome.storage.local.get(["sessionToken", "userId"], (data) => {
@@ -147,6 +148,7 @@ async function handleMessage(message) {
         state.meetingDetected = true;
         state.status = "active";
         state.promptsMutedByUser = false;
+        state.coachingPausedByUser = false;
         startSessionIntervals();
         broadcastStatus();
         await sendMessageToMeetingTabs({
@@ -166,11 +168,13 @@ async function handleMessage(message) {
     case "MUTE_COACHING":
       state.status = "muted";
       state.promptsMutedByUser = true;
+      state.coachingPausedByUser = false;
       broadcastStatus();
       return { status: "muted" };
     case "UNMUTE_COACHING":
       state.status = "active";
       state.promptsMutedByUser = false;
+      state.coachingPausedByUser = false;
       startSessionIntervals();
       broadcastStatus();
       return { status: "active" };
@@ -285,6 +289,7 @@ async function handleStartCoaching(message) {
     state.eventBuffer = [];
     state.captureMode = captureMode;
     state.promptsMutedByUser = false;
+    state.coachingPausedByUser = false;
     startSessionIntervals();
     await sendMessageToMeetingTabs({
       type: "COACHING_STARTED",
@@ -314,6 +319,7 @@ async function handlePauseCoaching() {
       state.pollingInterval = null;
     }
     state.status = "ready";
+    state.coachingPausedByUser = true;
     broadcastStatus();
     console.log("[GleaMeet] Coaching paused, session preserved:", state.meetingSessionId);
     return { status: "ready" };
@@ -335,6 +341,7 @@ async function handleStopCoaching() {
       state.eventBuffer = [];
       state.captureMode = "full_meeting";
       state.promptsMutedByUser = false;
+      state.coachingPausedByUser = false;
       state.batchInterval = null;
       state.pollingInterval = null;
       if (!state.meetingDetected) {
@@ -344,6 +351,7 @@ async function handleStopCoaching() {
       return { status: state.status, reportId: result.report_id };
     }
     state.status = state.meetingDetected ? "ready" : "off";
+    state.coachingPausedByUser = false;
     if (!state.meetingDetected) {
       state.platform = null;
     }
@@ -390,6 +398,7 @@ async function handleMeetingEnded() {
     state.eventBuffer = [];
     state.captureMode = "full_meeting";
     state.promptsMutedByUser = false;
+    state.coachingPausedByUser = false;
     broadcastStatus();
     return { status: "off" };
   } catch (err) {
@@ -418,7 +427,15 @@ async function flushEventBuffer() {
   }
 }
 async function pollForPrompts() {
-  if (!state.meetingSessionId || state.status !== "active") return;
+  if (!state.meetingSessionId || state.promptsMutedByUser || state.coachingPausedByUser) return;
+  if (state.status !== "active") {
+    const context = await getPreferredMeetingContext();
+    if (!context?.meetingDetected) return;
+    state.meetingDetected = true;
+    state.platform = context.platform ?? state.platform;
+    state.status = "active";
+    broadcastStatus();
+  }
   try {
     const result = await pollPrompts(state.meetingSessionId);
     for (const prompt of result.prompts) {
@@ -519,6 +536,7 @@ function startSessionIntervals() {
   if (state.pollingInterval) clearInterval(state.pollingInterval);
   state.batchInterval = setInterval(flushEventBuffer, 3e3);
   state.pollingInterval = setInterval(pollForPrompts, 2e3);
+  void pollForPrompts();
 }
 function getPreferredMeetingTab(callback) {
   chrome.tabs.query({ url: [...MEETING_TAB_URL_PATTERNS] }, (tabs) => {

@@ -22,6 +22,7 @@ interface SessionState {
   batchInterval: ReturnType<typeof setInterval> | null;
   captureMode: CaptureMode;
   promptsMutedByUser: boolean;
+  coachingPausedByUser: boolean;
 }
 
 interface TabMeetingContext {
@@ -47,6 +48,7 @@ const state: SessionState = {
   batchInterval: null,
   captureMode: 'full_meeting',
   promptsMutedByUser: false,
+  coachingPausedByUser: false,
 };
 
 const authStateReady = new Promise<void>((resolve) => {
@@ -90,6 +92,7 @@ async function handleMessage(message: any): Promise<any> {
         state.meetingDetected = true;
         state.status = 'active';
         state.promptsMutedByUser = false;
+        state.coachingPausedByUser = false;
         startSessionIntervals();
         broadcastStatus();
         // Notify content script
@@ -113,12 +116,14 @@ async function handleMessage(message: any): Promise<any> {
     case 'MUTE_COACHING':
       state.status = 'muted';
       state.promptsMutedByUser = true;
+      state.coachingPausedByUser = false;
       broadcastStatus();
       return { status: 'muted' };
 
     case 'UNMUTE_COACHING':
       state.status = 'active';
       state.promptsMutedByUser = false;
+      state.coachingPausedByUser = false;
       startSessionIntervals();
       broadcastStatus();
       return { status: 'active' };
@@ -254,6 +259,7 @@ async function handleStartCoaching(message: any): Promise<any> {
     state.captureMode = captureMode;
 
     state.promptsMutedByUser = false;
+    state.coachingPausedByUser = false;
     startSessionIntervals();
 
     // Notify content script that coaching has started (audio capture runs there)
@@ -285,6 +291,7 @@ async function handlePauseCoaching(): Promise<any> {
     if (state.pollingInterval) { clearInterval(state.pollingInterval); state.pollingInterval = null; }
 
     state.status = 'ready'; // ready = session exists but coaching paused
+    state.coachingPausedByUser = true;
     broadcastStatus();
 
     console.log('[GleaMeet] Coaching paused, session preserved:', state.meetingSessionId);
@@ -317,6 +324,7 @@ async function handleStopCoaching(): Promise<any> {
       state.eventBuffer = [];
       state.captureMode = 'full_meeting';
       state.promptsMutedByUser = false;
+      state.coachingPausedByUser = false;
       state.batchInterval = null;
       state.pollingInterval = null;
       if (!state.meetingDetected) {
@@ -328,6 +336,7 @@ async function handleStopCoaching(): Promise<any> {
     }
 
     state.status = state.meetingDetected ? 'ready' : 'off';
+    state.coachingPausedByUser = false;
     if (!state.meetingDetected) {
       state.platform = null;
     }
@@ -376,6 +385,7 @@ async function handleMeetingEnded(): Promise<any> {
     state.eventBuffer = [];
     state.captureMode = 'full_meeting';
     state.promptsMutedByUser = false;
+    state.coachingPausedByUser = false;
 
     broadcastStatus();
     return { status: 'off' };
@@ -414,7 +424,17 @@ async function flushEventBuffer(): Promise<void> {
 
 /** Poll for pending prompts every 2 seconds */
 async function pollForPrompts(): Promise<void> {
-  if (!state.meetingSessionId || state.status !== 'active') return;
+  if (!state.meetingSessionId || state.promptsMutedByUser || state.coachingPausedByUser) return;
+
+  if (state.status !== 'active') {
+    const context = await getPreferredMeetingContext();
+    if (!context?.meetingDetected) return;
+
+    state.meetingDetected = true;
+    state.platform = context.platform ?? state.platform;
+    state.status = 'active';
+    broadcastStatus();
+  }
 
   try {
     const result = await pollPrompts(state.meetingSessionId);
@@ -542,6 +562,7 @@ function startSessionIntervals(): void {
 
   // Start prompt polling every 2 seconds (per SRS)
   state.pollingInterval = setInterval(pollForPrompts, 2000);
+  void pollForPrompts();
 }
 
 function getPreferredMeetingTab(callback: (tab: chrome.tabs.Tab | undefined) => void): void {
