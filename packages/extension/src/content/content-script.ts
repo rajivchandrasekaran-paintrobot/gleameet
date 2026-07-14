@@ -242,6 +242,24 @@ function isVisibleElement(el: Element): boolean {
 
 let meetingEndDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
+function cancelMeetingEndDebounce(): void {
+  if (!meetingEndDebounceTimer) return;
+  clearTimeout(meetingEndDebounceTimer);
+  meetingEndDebounceTimer = null;
+}
+
+function scheduleMeetingEndDebounce(): void {
+  if (meetingEndDebounceTimer) return;
+
+  const debounceMs = state.status === 'active' || state.status === 'muted' ? 15000 : 5000;
+  meetingEndDebounceTimer = setTimeout(() => {
+    meetingEndDebounceTimer = null;
+    if (!detectMeeting()) {
+      onMeetingEnded();
+    }
+  }, debounceMs);
+}
+
 /** Start observing the DOM for meeting lifecycle changes */
 function startMeetingDetection(): void {
   // Initial check
@@ -255,21 +273,13 @@ function startMeetingDetection(): void {
     const inMeeting = detectMeeting();
     if (inMeeting && !state.meetingDetected) {
       // Cancel any pending end debounce — we're still in the meeting
-      if (meetingEndDebounceTimer) {
-        clearTimeout(meetingEndDebounceTimer);
-        meetingEndDebounceTimer = null;
-      }
+      cancelMeetingEndDebounce();
       onMeetingDetected();
+    } else if (inMeeting) {
+      cancelMeetingEndDebounce();
     } else if (!inMeeting && state.meetingDetected) {
-      // Debounce meeting end by 3 seconds — DOM can flicker during Meet reloads
-      if (!meetingEndDebounceTimer) {
-        meetingEndDebounceTimer = setTimeout(() => {
-          meetingEndDebounceTimer = null;
-          if (!detectMeeting()) {
-            onMeetingEnded();
-          }
-        }, 3000);
-      }
+      // Debounce meeting end — Zoom and Meet DOM can flicker during capture/start/rejoin.
+      scheduleMeetingEndDebounce();
     }
   });
 
@@ -1075,11 +1085,11 @@ setInterval(() => {
 
   const inMeeting = detectMeeting();
   if (inMeeting && !state.meetingDetected) {
+    cancelMeetingEndDebounce();
     onMeetingDetected();
-  } else if (!inMeeting && state.meetingDetected && !meetingEndDebounceTimer) {
-    meetingEndDebounceTimer = setTimeout(() => {
-      meetingEndDebounceTimer = null;
-      if (!detectMeeting()) onMeetingEnded();
-    }, 3000);
+  } else if (inMeeting) {
+    cancelMeetingEndDebounce();
+  } else if (!inMeeting && state.meetingDetected) {
+    scheduleMeetingEndDebounce();
   }
 }, 1000);

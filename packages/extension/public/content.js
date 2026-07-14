@@ -310,6 +310,21 @@
     return rect.width > 0 && rect.height > 0;
   }
   var meetingEndDebounceTimer = null;
+  function cancelMeetingEndDebounce() {
+    if (!meetingEndDebounceTimer) return;
+    clearTimeout(meetingEndDebounceTimer);
+    meetingEndDebounceTimer = null;
+  }
+  function scheduleMeetingEndDebounce() {
+    if (meetingEndDebounceTimer) return;
+    const debounceMs = state.status === "active" || state.status === "muted" ? 15e3 : 5e3;
+    meetingEndDebounceTimer = setTimeout(() => {
+      meetingEndDebounceTimer = null;
+      if (!detectMeeting()) {
+        onMeetingEnded();
+      }
+    }, debounceMs);
+  }
   function startMeetingDetection() {
     if (detectMeeting() && !state.meetingDetected) {
       onMeetingDetected();
@@ -317,20 +332,12 @@
     state.mutationObserver = new MutationObserver(() => {
       const inMeeting = detectMeeting();
       if (inMeeting && !state.meetingDetected) {
-        if (meetingEndDebounceTimer) {
-          clearTimeout(meetingEndDebounceTimer);
-          meetingEndDebounceTimer = null;
-        }
+        cancelMeetingEndDebounce();
         onMeetingDetected();
+      } else if (inMeeting) {
+        cancelMeetingEndDebounce();
       } else if (!inMeeting && state.meetingDetected) {
-        if (!meetingEndDebounceTimer) {
-          meetingEndDebounceTimer = setTimeout(() => {
-            meetingEndDebounceTimer = null;
-            if (!detectMeeting()) {
-              onMeetingEnded();
-            }
-          }, 3e3);
-        }
+        scheduleMeetingEndDebounce();
       }
     });
     state.mutationObserver.observe(document.body, {
@@ -943,12 +950,12 @@
     }
     const inMeeting = detectMeeting();
     if (inMeeting && !state.meetingDetected) {
+      cancelMeetingEndDebounce();
       onMeetingDetected();
-    } else if (!inMeeting && state.meetingDetected && !meetingEndDebounceTimer) {
-      meetingEndDebounceTimer = setTimeout(() => {
-        meetingEndDebounceTimer = null;
-        if (!detectMeeting()) onMeetingEnded();
-      }, 3e3);
+    } else if (inMeeting) {
+      cancelMeetingEndDebounce();
+    } else if (!inMeeting && state.meetingDetected) {
+      scheduleMeetingEndDebounce();
     }
   }, 1e3);
 })();
