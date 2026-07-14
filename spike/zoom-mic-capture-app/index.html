@@ -224,6 +224,15 @@
     #feed-out .err { color: var(--dot-error); }
     #feed-out .good { color: var(--dot-active); }
     #feed-out .nudge { font-weight: 600; }
+    #feed-out .coaching-blurb {
+      font-weight: 600;
+      color: var(--text);
+      background: var(--card-bg);
+      padding: 6px 8px;
+      margin: 8px 0;
+      border-left: 3px solid var(--dot-active);
+      border-radius: 4px;
+    }
     #feed-out .report-h { color: var(--text-muted); letter-spacing: 0.06em; margin-top: 4px; }
     #progress { color: var(--text-muted); white-space: nowrap; overflow: hidden; }
 
@@ -475,8 +484,6 @@
           <span class="state-dot" aria-hidden="true"></span>
           <span id="status">idle</span>
           <span class="spacer"></span>
-          <button id="probe" title="Start mic capture">Start</button>
-          <button id="stop" disabled title="Stop mic capture">Stop</button>
           <details class="overflow">
             <summary aria-label="More options">⋯</summary>
             <div class="overflow-menu">

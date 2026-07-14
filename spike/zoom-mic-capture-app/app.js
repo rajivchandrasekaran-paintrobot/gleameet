@@ -22,19 +22,19 @@ let stream, recorder, restartTimer;
 let totalChunks = 0, totalBytes = 0;
 let audioCtx, analyser, rafId;
 
-// --- Capture feed: tqdm-style collection bar + relayed analysis output.
-// The relay is fire-and-forget (POST /chunk returns 204), so results are
-// pulled back by polling GET /analysis on the local server.
-const CHUNK_MS = 10000;
+// --- Auto 30-second collection: each chunk is analyzed, result shown as "coaching blurb"
+// The relay is fire-and-forget (POST /chunk returns 204), results polled via GET /analysis
+const CHUNK_MS = 30000;  // 30 seconds per collection cycle
 let chunkSeq = 0;        // 1-based; the chunk currently being collected
 let chunkStartedAt = 0;
-let micHot = false;      // fed by the level meter; shown as ●/○ in the bar
+let micHot = false;      // fed by the level meter
 let progressTimer = null;
 let pollTimer = null;
 let lastSeenSeq = 0;
-let awaitingReport = false;
-let reportDeadline = 0;
+let awaitingAnalysis = false;  // waiting for this chunk's analysis
+let analysisDeadline = 0;
 let promptTimer = null;
+let autoRunning = false; // true once page has loaded and mic access granted
 
 function feedLine(text, cls) {
   const div = document.createElement('div');
@@ -73,8 +73,23 @@ promptCardEl.addEventListener('click', dismissPrompt);
 function stopFeed(finalText) {
   clearInterval(pollTimer);
   pollTimer = null;
-  awaitingReport = false;
+  awaitingAnalysis = false;
   progressEl.textContent = finalText || 'idle';
+}
+
+// Display a "coaching blurb": timestamp + top coaching prompt for this 30s chunk
+function showCoachingBlurb(chunk, prompts) {
+  if (!prompts || prompts.length === 0) {
+    const ts = new Date().toLocaleTimeString();
+    feedLine(`[${ts}] (no coaching insights this cycle)`, 'muted');
+    return;
+  }
+  const ts = new Date().toLocaleTimeString();
+  const topPrompt = prompts[0];
+  const text = topPrompt.short_text || topPrompt.text || JSON.stringify(topPrompt);
+  const summary = `[${ts}] ${text}`;
+  feedLine(summary, 'coaching-blurb');
+  log('coaching blurb', { ts, text, chunk });
 }
 
 function renderReport(r) {
@@ -98,35 +113,40 @@ async function pollAnalysis() {
     if (!res.ok) return;
     const data = await res.json();
     if (!data.relay) {
-      if (awaitingReport) {
+      if (awaitingAnalysis) {
         feedLine('relay off — no backend analysis (set RENDER_API_BASE)', 'muted');
         stopFeed('idle');
+        if (autoRunning) setTimeout(() => startProbe(), 1000);
       }
       return;
     }
     for (const r of data.results) {
       lastSeenSeq = Math.max(lastSeenSeq, r.seq);
-      if (r.error) feedLine(`✖ chunk ${r.seq}: ${r.error}`, 'err');
-      else if (!r.text) feedLine(`· chunk ${r.seq}: (silence)`, 'muted');
-      else feedLine(`✔ chunk ${r.seq}: “${r.text}”`);
-      for (const p of r.prompts || []) {
-        const text = p.short_text || p.text || JSON.stringify(p);
-        feedLine(`★ ${text}`, 'nudge');
-        showPrompt(text);
-        log('coaching prompt', p);
+      if (r.error) {
+        feedLine(`✖ chunk ${r.seq}: ${r.error}`, 'err');
+      } else if (!r.text) {
+        feedLine(`· chunk ${r.seq}: (silence)`, 'muted');
+      } else {
+        // Show coaching blurb for this chunk
+        showCoachingBlurb(r.seq, r.prompts || []);
+        // Also show prompts in the prompt card briefly
+        for (const p of r.prompts || []) {
+          const text = p.short_text || p.text || JSON.stringify(p);
+          showPrompt(text);
+          log('coaching prompt', p);
+        }
       }
+      if (r.seq >= chunkSeq) awaitingAnalysis = false;
     }
-    if (awaitingReport) {
-      if (data.report_status === 'ready' && data.report) {
-        renderReport(data.report);
-        stopFeed('session complete');
-      } else if (data.report_status === 'failed') {
-        feedLine('✖ report generation failed — see server terminal', 'err');
-        stopFeed('idle');
-      } else if (Date.now() > reportDeadline) {
-        feedLine('✖ timed out waiting for report', 'err');
-        stopFeed('idle');
-      }
+    // Auto-restart after chunk analysis arrives
+    if (!awaitingAnalysis && autoRunning && !recorder) {
+      stopFeed('');
+      setTimeout(() => startProbe(), 500);
+    }
+    if (awaitingAnalysis && Date.now() > analysisDeadline) {
+      feedLine('✖ timed out waiting for analysis', 'err');
+      stopFeed('idle');
+      if (autoRunning) setTimeout(() => startProbe(), 1000);
     }
   } catch { /* local server briefly unreachable — keep polling */ }
 }
@@ -206,17 +226,17 @@ async function startProbe() {
       body: JSON.stringify({ type: 'start', mime, sampleRate }),
     }).catch((e) => log('event post failed', e.message));
 
-    // Stop/restart every 10s (same pattern as the extension's offscreen.ts)
-    // so each shipped blob is a COMPLETE WebM file — timeslice chunks after
-    // the first lack the container header and Whisper cannot decode them.
+    // Collect for 30s then auto-restart. Each blob is a complete WebM file.
     totalChunks = 0; totalBytes = 0;
     let pending = [];
-    chunkSeq = 1;
+    if (chunkSeq === 0) {
+      // First time only: clear feed and show it
+      chunkSeq = 1;
+      feedOutEl.innerHTML = '';
+      feedEl.hidden = false;
+    }
     chunkStartedAt = Date.now();
-    lastSeenSeq = 0;
-    awaitingReport = false;
-    feedOutEl.innerHTML = '';
-    feedEl.hidden = false;
+    awaitingAnalysis = false;
     recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
     recorder.ondataavailable = (e) => {
       if (e.data && e.data.size > 0) pending.push(e.data);
@@ -228,7 +248,6 @@ async function startProbe() {
       const endOffsetMs = Date.now();
       pending = [];
       chunkSeq += 1;
-      chunkStartedAt = Date.now();
       if (blob.size < 1000) { log('chunk skipped (too small)', blob.size); return; }
       totalChunks += 1;
       totalBytes += blob.size;
@@ -240,19 +259,19 @@ async function startProbe() {
         body: blob,
       }).catch((err) => log('chunk post failed', err.message));
       log('chunk shipped, bytes', blob.size);
+      awaitingAnalysis = true;
+      analysisDeadline = Date.now() + 15000;
+      progressEl.textContent = `chunk ${seq}: analyzing...`;
     };
     recorder.onerror = (e) => log('MediaRecorder error', e.error?.message || String(e));
     recorder.start();
     restartTimer = setInterval(() => {
       if (recorder.state === 'recording') { recorder.stop(); recorder.start(); }
-    }, 10000);
+    }, CHUNK_MS);
 
     progressTimer = setInterval(renderProgress, 200);
-    pollTimer = setInterval(pollAnalysis, 1000);
+    if (!pollTimer) pollTimer = setInterval(pollAnalysis, 1000);
     startMeter(stream);
-
-    document.getElementById('stop').disabled = false;
-    document.getElementById('probe').disabled = true;
   } catch (err) {
     // NotReadableError here is the device-conflict signal we want to test.
     log('getUserMedia error', `${err.name}: ${err.message}`);
@@ -261,33 +280,26 @@ async function startProbe() {
 }
 
 function stopProbe() {
+  autoRunning = false;
   cancelAnimationFrame(rafId);
   clearInterval(restartTimer);
   clearInterval(progressTimer);
   progressTimer = null;
+  clearInterval(pollTimer);
+  pollTimer = null;
   micHot = false;
   chunkStartedAt = 0;
   audioCtx?.close();
-  recorder?.stop(); // final onstop still ships the last blob
+  recorder?.stop();
   stream?.getTracks().forEach((t) => t.stop());
   log('stopped', `total chunks: ${totalChunks}, total bytes: ${totalBytes}`);
-  // Keep polling until the report lands (endBackendSession waits for
-  // in-flight transcriptions, then meetings/end + report fetch).
-  awaitingReport = true;
-  reportDeadline = Date.now() + 90000;
-  progressEl.textContent = '⟳ analyzing final chunk & generating report…';
-  // Small delay so the final chunk reaches the server before meetings/end
-  setTimeout(() => fetch('/event', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ type: 'stop' }),
-  }).catch(() => {}), 500);
   setStatus('idle');
-  document.getElementById('stop').disabled = true;
-  document.getElementById('probe').disabled = false;
 }
 
-document.getElementById('probe').onclick = startProbe;
-document.getElementById('stop').onclick = stopProbe;
-
-window.addEventListener('load', initZoomSdk);
+window.addEventListener('load', async () => {
+  await initZoomSdk();
+  // Auto-start 30-second collection loop
+  autoRunning = true;
+  setStatus('recording');
+  startProbe();
+});
