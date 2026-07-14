@@ -160,9 +160,22 @@ function uuidv4() {
   });
 }
 
+// Rolling relay outcomes for the webview to poll via GET /analysis — the
+// /chunk POST returns 204 immediately, so transcripts/prompts/report land
+// here instead of in the response.
+const analysis = {
+  results: [],          // { seq, text, prompts, error?, at }
+  reportStatus: 'none', // none | pending | ready | failed
+  report: null,
+};
+function pushAnalysis(entry) {
+  analysis.results.push({ at: Date.now(), ...entry });
+  if (analysis.results.length > 200) analysis.results.shift();
+}
+
 // Blob → /audio/transcribe → transcript_segment → /events/batch → log prompts
 let inflightRelays = 0;
-async function relayChunk(buf, mime, startOffsetMs, endOffsetMs) {
+async function relayChunk(buf, mime, startOffsetMs, endOffsetMs, seq) {
   // Capture the id: meetings/end nulls backend.meetingSessionId while we run
   const meetingSessionId = backend.meetingSessionId;
   if (!meetingSessionId) return;
@@ -175,6 +188,7 @@ async function relayChunk(buf, mime, startOffsetMs, endOffsetMs) {
   const { text } = await backendFetch('/audio/transcribe', { method: 'POST', body: form });
   if (!text) {
     console.log('RELAY transcript: (empty — silence or noise filtered)');
+    pushAnalysis({ seq, text: '', prompts: [] });
     return;
   }
   console.log(`RELAY transcript: "${text}"`);
@@ -237,12 +251,14 @@ async function relayChunk(buf, mime, startOffsetMs, endOffsetMs) {
   if (result.errors && result.errors.length) {
     console.error('RELAY event errors:', JSON.stringify(result.errors));
   }
+  pushAnalysis({ seq, text, prompts: result.prompts || [] });
 }
 
 async function endBackendSession() {
   if (!backend.meetingSessionId) return;
   const meetingSessionId = backend.meetingSessionId;
   backend.meetingSessionId = null; // no new chunks accepted from here on
+  analysis.reportStatus = 'pending';
   // Let in-flight transcriptions land so the final segment makes the report
   const deadline = Date.now() + 15000;
   while (inflightRelays > 0 && Date.now() < deadline) {
@@ -255,8 +271,14 @@ async function endBackendSession() {
       body: JSON.stringify({ meeting_session_id: meetingSessionId }),
     });
     console.log(`RELAY meeting ended, report_id=${ended.report_id}`);
+    // meetings/end generates the report synchronously — fetch it now so the
+    // webview can render it from /analysis.
+    analysis.report = await backendFetch(`/reports/${meetingSessionId}`);
+    analysis.reportStatus = 'ready';
+    console.log('RELAY report fetched — available to the webview via /analysis');
   } catch (err) {
-    console.error(`RELAY meetings/end failed: ${err.message}`);
+    analysis.reportStatus = 'failed';
+    console.error(`RELAY meetings/end or report fetch failed: ${err.message}`);
   }
 }
 
@@ -314,9 +336,13 @@ app.post('/chunk', (req, res) => {
 
   const startOffsetMs = Number(req.query.start_offset_ms) || Date.now() - 10000;
   const endOffsetMs = Number(req.query.end_offset_ms) || Date.now();
+  const seq = Number(req.query.seq) || session.chunks;
   inflightRelays += 1;
-  relayChunk(buf, req.headers['content-type'], startOffsetMs, endOffsetMs)
-    .catch((err) => console.error(`RELAY chunk failed: ${err.message}`))
+  relayChunk(buf, req.headers['content-type'], startOffsetMs, endOffsetMs, seq)
+    .catch((err) => {
+      pushAnalysis({ seq, error: err.message });
+      console.error(`RELAY chunk failed: ${err.message}`);
+    })
     .finally(() => { inflightRelays -= 1; });
 });
 
@@ -327,6 +353,9 @@ app.post('/event', express.json(), (req, res) => {
     session.chunks = 0;
     session.bytes = 0;
     session.mime = mime;
+    analysis.results = [];
+    analysis.reportStatus = 'none';
+    analysis.report = null;
     console.log('---');
     console.log(`SESSION START  mime=${mime}  sampleRate=${sampleRate || '?'}Hz`);
     console.log('---');
@@ -342,6 +371,18 @@ app.post('/event', express.json(), (req, res) => {
     return;
   }
   res.json({ ok: true });
+});
+
+// Webview polling endpoint: per-chunk analysis outcomes + the post-meeting
+// report, so the page can show them without ever holding the session token.
+app.get('/analysis', (req, res) => {
+  const since = Number(req.query.since) || 0;
+  res.json({
+    relay: Boolean(RENDER_API_BASE),
+    results: analysis.results.filter((r) => r.seq > since),
+    report_status: analysis.reportStatus,
+    report: analysis.reportStatus === 'ready' ? analysis.report : null,
+  });
 });
 
 app.get('/stats', (_req, res) => {

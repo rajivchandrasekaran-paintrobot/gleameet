@@ -2,26 +2,267 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>GleaMeet Zoom Mic-Capture Spike</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GleaMeet</title>
   <style>
-    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
-    button { margin-right: 0.5rem; padding: 0.4rem 0.8rem; }
-    pre { background: #111; color: #eee; padding: 0.75rem; border-radius: 4px; max-height: 320px; overflow: auto; font-size: 12px; }
-    .row { margin: 0.5rem 0; }
-    .pill { display: inline-block; padding: 2px 8px; border-radius: 10px; background: #eee; font-size: 12px; margin-left: 6px; }
+    /* ------------------------------------------------------------------
+       Fake-transparency: the webview is an opaque native container, so the
+       panel "blends" by matching Zoom's own panel chrome color exactly.
+       Eyedropper-verified against Zoom client version 6.4.x — re-verify
+       after Zoom UI updates.
+       ------------------------------------------------------------------ */
+    :root {
+      color-scheme: light dark;
+      --panel-bg-light: #ffffff; /* Zoom light panel chrome */
+      --panel-bg-dark: #242424;  /* Zoom dark panel chrome */
+
+      --panel-bg: var(--panel-bg-light);
+      --text: #1a1a1a;
+      --text-muted: #6b6b6b;
+      --card-bg: #ffffff;
+      --card-border: rgba(0, 0, 0, 0.12); /* low-contrast: hides bg mismatch */
+      --strip-border: rgba(0, 0, 0, 0.08);
+      --control-hover: rgba(0, 0, 0, 0.06);
+      --dot-active: #2e8b57;
+      --dot-paused: #b0b0b0;
+      --dot-error: #c0392b;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --panel-bg: var(--panel-bg-dark);
+        --text: #ececec;
+        --text-muted: #9a9a9a;
+        --card-bg: #2e2e2e;
+        --card-border: rgba(255, 255, 255, 0.14);
+        --strip-border: rgba(255, 255, 255, 0.10);
+        --control-hover: rgba(255, 255, 255, 0.08);
+      }
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      background: var(--panel-bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 13px;
+    }
+
+    /* --- Bottom-anchored dock: everything lives here; the space above is
+           intentionally empty so the panel reads as Zoom's own chrome. --- */
+    .prompt-dock {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    /* --- Prompt card: hidden until a coaching prompt arrives.
+           Wiring toggles .visible to slide it up, .dismissing to fade+collapse.
+           (No prompt-delivery wiring exists in this spike yet — the classes
+           are the contract for it.) --- */
+    .prompt-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      line-height: 1.45;
+      display: none;
+      transform: translateY(calc(100% + 12px));
+      opacity: 0;
+      transition: transform 200ms ease-out, opacity 200ms ease-out,
+                  max-height 200ms ease-out;
+    }
+    .prompt-card.visible {
+      display: block;
+      transform: translateY(0);
+      opacity: 1;
+    }
+    .prompt-card.dismissing {
+      opacity: 0;
+      max-height: 0;
+      padding-top: 0;
+      padding-bottom: 0;
+      overflow: hidden;
+    }
+    .prompt-card .prompt-title {
+      font-weight: 600;
+      margin: 0 0 4px;
+      font-size: 12px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .prompt-card .prompt-text { margin: 0; }
+    @media (prefers-reduced-motion: reduce) {
+      .prompt-card { transition: none; transform: none; }
+    }
+
+    /* --- Capture feed: tqdm-style collection bar + analysis output from the
+           relay. Hidden until the first capture starts. --- */
+    .capture-feed {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 11px;
+      line-height: 1.5;
+    }
+    .capture-feed[hidden] { display: none; }
+    #feed-out {
+      max-height: 96px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    #feed-out:empty { display: none; }
+    /* Pop-out is only 240px tall — keep feed + prompt card + strip fitting */
+    @media (max-height: 300px) {
+      #feed-out { max-height: 56px; }
+    }
+    #feed-out .muted { color: var(--text-muted); }
+    #feed-out .err { color: var(--dot-error); }
+    #feed-out .good { color: var(--dot-active); }
+    #feed-out .nudge { font-weight: 600; }
+    #feed-out .report-h { color: var(--text-muted); letter-spacing: 0.06em; margin-top: 4px; }
+    #progress { color: var(--text-muted); white-space: nowrap; overflow: hidden; }
+
+    /* --- Thin status strip: the only thing visible when no prompt is up. --- */
+    .status-strip {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 28px;
+      padding: 2px 4px;
+      border-top: 1px solid var(--strip-border);
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .status-strip button {
+      appearance: none;
+      background: none;
+      border: none;
+      border-radius: 6px;
+      padding: 4px 8px;
+      font: inherit;
+      color: var(--text);
+      cursor: pointer;
+    }
+    .status-strip button:hover:not(:disabled) { background: var(--control-hover); }
+    .status-strip button:disabled { opacity: 0.4; cursor: default; }
+
+    /* Session-state dot precedes the status label app.js writes into #status
+       (idle / recording / error). */
+    .state-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--dot-paused);
+      flex: none;
+    }
+    #status { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .spacer { flex: 1; }
+
+    /* --- Overflow menu (⋯): <details> so it needs zero JS. Opens upward,
+           capped height so it never fills the panel at 240px tall. --- */
+    .overflow { position: relative; }
+    .overflow summary {
+      list-style: none;
+      cursor: pointer;
+      border-radius: 6px;
+      padding: 2px 10px;
+      font-size: 15px;
+      line-height: 1.4;
+      user-select: none;
+    }
+    .overflow summary::-webkit-details-marker { display: none; }
+    .overflow summary:hover { background: var(--control-hover); }
+    .overflow-menu {
+      position: absolute;
+      bottom: calc(100% + 6px);
+      right: 0;
+      width: min(288px, calc(100vw - 24px));
+      max-height: min(60vh, 320px);
+      overflow-y: auto;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .overflow-menu nav { display: flex; flex-direction: column; }
+    .overflow-menu nav a {
+      color: var(--text);
+      text-decoration: none;
+      padding: 6px 8px;
+      border-radius: 6px;
+    }
+    .overflow-menu nav a:hover { background: var(--control-hover); }
+    .overflow-menu .about {
+      margin: 0;
+      padding: 0 8px;
+      font-size: 11px;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+    .overflow-menu pre {
+      margin: 0;
+      background: var(--panel-bg-dark);
+      color: #ddd;
+      padding: 8px;
+      border-radius: 6px;
+      max-height: 140px;
+      overflow: auto;
+      font-size: 10px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
   </style>
 </head>
 <body>
-  <h1>Zoom Mic-Capture Spike <span class="pill">Path B</span></h1>
-  <p>Probes the local user's own microphone only — never taps other participants or the meeting's mixed stream.</p>
+  <!-- Space above the dock stays empty on purpose: with the background
+       color-matched to Zoom's chrome it reads as part of the panel. -->
 
-  <div class="row">
-    <button id="probe">Start mic probe</button>
-    <button id="stop" disabled>Stop</button>
-    <span id="status" class="pill">idle</span>
+  <div class="prompt-dock">
+    <div class="prompt-card" id="prompt-card">
+      <p class="prompt-title">Coaching prompt</p>
+      <p class="prompt-text" id="prompt-text"></p>
+    </div>
+
+    <div class="capture-feed" id="feed" hidden>
+      <div id="feed-out"></div>
+      <div id="progress">idle</div>
+    </div>
+
+    <div class="status-strip">
+      <span class="state-dot" aria-hidden="true"></span>
+      <span id="status">idle</span>
+      <span class="spacer"></span>
+      <button id="probe" title="Start mic capture">Start</button>
+      <button id="stop" disabled title="Stop mic capture">Stop</button>
+      <details class="overflow">
+        <summary aria-label="More options">⋯</summary>
+        <div class="overflow-menu">
+          <nav>
+            <a href="#history">History</a>
+            <a href="#report">Report</a>
+            <a href="#settings">Settings</a>
+          </nav>
+          <p class="about">GleaMeet captures only your own microphone — never
+            other participants or the meeting's mixed stream.</p>
+          <pre id="log">Loading…</pre>
+        </div>
+      </details>
+    </div>
   </div>
-
-  <pre id="log">Loading…</pre>
 
   <script src="https://appssdk.zoom.us/sdk.js"></script>
   <!-- Page logic lives in app.js: the CSP (script-src 'self' + Zoom origins)
