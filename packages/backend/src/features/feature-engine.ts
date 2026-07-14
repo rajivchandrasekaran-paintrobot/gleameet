@@ -484,7 +484,11 @@ function computeFeatureSnapshot(state: MeetingState): FeatureSnapshot {
   const lossFrameScore = Math.min(state.loss_frame_hits / segCount, 1.0);
   const gainFrameScore = Math.min(state.gain_frame_hits / segCount, 1.0);
   const actionSpecificityScore = Math.min(state.action_specificity_hits / segCount, 1.0);
-  const activityCount = Math.max(state.turn_count, state.transcript_segment_count);
+  const transcriptWordCount = state.recent_transcript
+    .filter(segment => segment.speaker === 'user')
+    .reduce((count, segment) => count + segment.text.split(/\s+/).filter(Boolean).length, 0);
+  const transcriptVolumeTurns = Math.ceil(transcriptWordCount / 12);
+  const activityCount = Math.max(state.turn_count, state.transcript_segment_count, transcriptVolumeTurns);
 
   return {
     // Timing features

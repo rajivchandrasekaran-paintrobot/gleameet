@@ -162,6 +162,24 @@ describe('Law Evaluator', () => {
     expect(triggers.some(t => t.law_id === 'C-01')).toBe(true);
   });
 
+  test('live laws can trigger from one long mic transcript chunk', async () => {
+    const state = createState({ turn_count: 0 });
+    const features = await processEvents([
+      makeTranscriptEvent(
+        'I want to walk through the plan and the tradeoffs because there are a few open decisions. ' +
+        'We should compare the implementation path, the customer impact, the timeline, and the operating risk before we decide.'
+      ),
+    ], state);
+
+    expect(state.turn_count).toBe(0);
+    expect(state.transcript_segment_count).toBe(1);
+    expect(features.turn_count).toBeGreaterThanOrEqual(3);
+
+    const triggers = await evaluateLaws('test-session', features, state);
+    expect(triggers.some(t => t.law_id === 'C-01')).toBe(true);
+    expect(triggers.some(t => t.law_id === 'C-03')).toBe(true);
+  });
+
   test('K-02: suppressed when gain_frame >= 0.4', async () => {
     const features: FeatureSnapshot = {
       loss_frame_score: 0.8,
