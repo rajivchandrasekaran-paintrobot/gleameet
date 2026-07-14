@@ -5,8 +5,17 @@ import { updatePromptDisplayState } from '../db/queries';
 
 export const promptsRouter = Router();
 
-// In-memory prompt store (Redis-backed in production; in-process is fine for single-instance v1)
-const pendingPrompts = new Map<string, any[]>();
+// In-memory prompt store (Redis-backed in production; in-process is fine for single-instance v1).
+// Prompts are removed on frontend ack, not on poll, so a transient extension/content-script miss
+// cannot permanently drop a live nudge that was generated and later appears in the report.
+const PROMPT_DELIVERY_LEASE_MS = 8000;
+
+interface PendingPromptRecord {
+  prompt: any;
+  leasedUntil: number;
+}
+
+const pendingPrompts = new Map<string, PendingPromptRecord[]>();
 
 /**
  * GET /prompts/poll
@@ -20,12 +29,15 @@ promptsRouter.get('/poll', async (req: AuthenticatedRequest, res: Response) => {
       return;
     }
 
-    const prompts = pendingPrompts.get(meetingSessionId) || [];
+    const now = Date.now();
+    const records = pendingPrompts.get(meetingSessionId) || [];
+    const deliverable = records.filter(record => record.leasedUntil <= now);
 
-    // Clear after poll (prompts are consumed once polled)
-    pendingPrompts.delete(meetingSessionId);
+    for (const record of deliverable) {
+      record.leasedUntil = now + PROMPT_DELIVERY_LEASE_MS;
+    }
 
-    const response: PromptPollResponse = { prompts };
+    const response: PromptPollResponse = { prompts: deliverable.map(record => record.prompt) };
     res.status(200).json(response);
   } catch (err) {
     console.error('[PROMPTS] Poll error:', err);
@@ -51,6 +63,7 @@ promptsRouter.post('/ack', async (req: AuthenticatedRequest, res: Response) => {
     const displayState = body.action === 'muted' ? 'muted' : body.action;
 
     await updatePromptDisplayState(body.prompt_id, displayState, dismissedAt);
+    removePendingPrompt(body.meeting_session_id, body.prompt_id);
 
     console.log(`[PROMPTS] Ack: prompt=${body.prompt_id} action=${body.action}`);
 
@@ -65,6 +78,20 @@ promptsRouter.post('/ack', async (req: AuthenticatedRequest, res: Response) => {
 /** Add a prompt to the pending queue (called by intervention engine) */
 export function enqueuePendingPrompt(meetingSessionId: string, prompt: any): void {
   const existing = pendingPrompts.get(meetingSessionId) || [];
-  existing.push(prompt);
+  if (!existing.some(record => record.prompt?.prompt_id === prompt?.prompt_id)) {
+    existing.push({ prompt, leasedUntil: 0 });
+  }
   pendingPrompts.set(meetingSessionId, existing);
+}
+
+function removePendingPrompt(meetingSessionId: string, promptId: string): void {
+  const existing = pendingPrompts.get(meetingSessionId);
+  if (!existing) return;
+
+  const remaining = existing.filter(record => record.prompt?.prompt_id !== promptId);
+  if (remaining.length === 0) {
+    pendingPrompts.delete(meetingSessionId);
+  } else {
+    pendingPrompts.set(meetingSessionId, remaining);
+  }
 }
