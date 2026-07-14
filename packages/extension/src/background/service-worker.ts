@@ -550,15 +550,54 @@ async function getPreferredMeetingContext(): Promise<TabMeetingContext | null> {
         status: response.status,
       };
     }
+    if (!response && isLikelyMeetingUrl(tab.url || '')) {
+      return {
+        meetingDetected: true,
+        platform: detectPlatformFromUrl(tab.url || ''),
+        status: 'ready',
+      };
+    }
   }
 
   const preferredTab = orderedTabs[0];
   if (!preferredTab?.url) return null;
 
   return {
-    meetingDetected: false,
+    meetingDetected: isLikelyMeetingUrl(preferredTab.url),
     platform: detectPlatformFromUrl(preferredTab.url),
   };
+}
+
+function isLikelyMeetingUrl(url: string): boolean {
+  const platform = detectPlatformFromUrl(url);
+  if (!platform) return false;
+
+  const decodedUrl = decodeURIComponent(url);
+  let path = decodedUrl;
+  try {
+    path = new URL(url).pathname;
+  } catch (_err) {
+    // Keep decodedUrl fallback for malformed transient navigation URLs.
+  }
+
+  if (platform === 'google_meet') {
+    return /meet\.google\.com\/[a-z]+-[a-z]+-[a-z]+/i.test(decodedUrl);
+  }
+
+  if (platform === 'zoom') {
+    return /\/wc\/\d+(?:\/(?:join|start|meeting))?(?:\/|$)/i.test(path);
+  }
+
+  if (platform === 'teams') {
+    return decodedUrl.includes('/meet/') ||
+      decodedUrl.includes('/callingv2') ||
+      decodedUrl.includes('/light-meetings/launch') ||
+      decodedUrl.includes('/l/meetup-join') ||
+      decodedUrl.includes('type=meet') ||
+      decodedUrl.includes('lightExperience=true');
+  }
+
+  return false;
 }
 
 async function queryMeetingTabs(): Promise<chrome.tabs.Tab[]> {
