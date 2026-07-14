@@ -216,13 +216,28 @@ function detectMeeting(): boolean {
       !!document.querySelector('[aria-label*="mute"]') ||
       !!document.querySelector('[class*="footer"] button') ||
       !!document.querySelector('video');
-    const endedScreen =
-      !!document.querySelector('.zm-modal-body-title') &&
-      /ended|left|removed/i.test(document.body.textContent || '');
-    return !endedScreen && hasMeetingUrl && (hasWebClientMeetingUrl || hasMeetingUi);
+
+    // Zoom often leaves old modal nodes in the DOM after a leave/rejoin cycle.
+    // Only a visible ended/left dialog should block URL-based meeting detection.
+    const visibleEndedScreen = Array.from(document.querySelectorAll('.zm-modal-body-title, .zm-modal-body-content, [role="dialog"]'))
+      .some((el) => isVisibleElement(el) && /ended|left|removed/i.test(el.textContent || ''));
+
+    if (hasMeetingUi) return hasMeetingUrl;
+    return hasMeetingUrl && hasWebClientMeetingUrl && !visibleEndedScreen;
   }
 
   return false;
+}
+
+function isVisibleElement(el: Element): boolean {
+  const element = el as HTMLElement;
+  const style = window.getComputedStyle(element);
+  if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
+    return false;
+  }
+
+  const rect = element.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0;
 }
 
 let meetingEndDebounceTimer: ReturnType<typeof setTimeout> | null = null;
