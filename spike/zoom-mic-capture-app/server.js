@@ -396,54 +396,72 @@ app.get('/stats', (_req, res) => {
   });
 });
 
-// --- HTTPS: Zoom desktop requires HTTPS even for local development
-const certDir = path.join(__dirname, '.certs');
-if (!fs.existsSync(certDir)) fs.mkdirSync(certDir, { recursive: true });
-
-const keyPath = path.join(certDir, 'key.pem');
-const certPath = path.join(certDir, 'cert.pem');
-
-let sslOptions;
-if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
-  sslOptions = {
-    key: fs.readFileSync(keyPath),
-    cert: fs.readFileSync(certPath),
-  };
-  console.log('Using existing self-signed cert from .certs/');
-} else {
-  const attrs = [{ name: 'commonName', value: 'localhost' }];
-  const pems = selfsigned.generate(attrs, {
-    algorithm: 'sha256',
-    days: 365,
-    keySize: 2048,
-    extensions: [
-      { name: 'basicConstraints', cA: true },
-      {
-        name: 'subjectAltName',
-        altNames: [
-          { type: 2, value: 'localhost' },
-          { type: 7, ip: '127.0.0.1' },
-        ],
-      },
-    ],
-  });
-  fs.writeFileSync(keyPath, pems.private);
-  fs.writeFileSync(certPath, pems.cert);
-  sslOptions = { key: pems.private, cert: pems.cert };
-  console.log('Generated new self-signed cert in .certs/');
-}
-
-https.createServer(sslOptions, app).listen(HTTPS_PORT, () => {
-  console.log(`Mic-capture spike (HTTPS) listening on https://localhost:${HTTPS_PORT}`);
-  console.log('Open https://localhost:3443 in a browser, or load it as a Zoom App.');
+function logRelayTarget() {
   console.log(
     RENDER_API_BASE
       ? `RELAY target: ${RENDER_API_BASE}${GOOGLE_ACCESS_TOKEN ? '' : '  (GOOGLE_ACCESS_TOKEN missing!)'}`
       : 'RELAY disabled — local logging only (set RENDER_API_BASE + GOOGLE_ACCESS_TOKEN to forward)'
   );
-});
+}
 
-// Also listen on plain HTTP for convenience
-app.listen(PORT, () => {
-  console.log(`(HTTP, non-Zoom)         listening on http://localhost:${PORT}`);
-});
+// --local: solo-developer loop against the Zoom desktop client, which
+// requires HTTPS even for localhost — so this branch generates/reuses a
+// self-signed cert. Testers should never hit this mode (see README).
+// Default (no flag): Render/production. The platform terminates HTTPS at
+// its edge and proxies plain HTTP to whatever port it assigns via $PORT.
+const isLocal = process.argv.includes('--local');
+
+if (isLocal) {
+  const certDir = path.join(__dirname, '.certs');
+  if (!fs.existsSync(certDir)) fs.mkdirSync(certDir, { recursive: true });
+
+  const keyPath = path.join(certDir, 'key.pem');
+  const certPath = path.join(certDir, 'cert.pem');
+
+  let sslOptions;
+  if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
+    sslOptions = {
+      key: fs.readFileSync(keyPath),
+      cert: fs.readFileSync(certPath),
+    };
+    console.log('Using existing self-signed cert from .certs/');
+  } else {
+    const attrs = [{ name: 'commonName', value: 'localhost' }];
+    const pems = selfsigned.generate(attrs, {
+      algorithm: 'sha256',
+      days: 365,
+      keySize: 2048,
+      extensions: [
+        { name: 'basicConstraints', cA: true },
+        {
+          name: 'subjectAltName',
+          altNames: [
+            { type: 2, value: 'localhost' },
+            { type: 7, ip: '127.0.0.1' },
+          ],
+        },
+      ],
+    });
+    fs.writeFileSync(keyPath, pems.private);
+    fs.writeFileSync(certPath, pems.cert);
+    sslOptions = { key: pems.private, cert: pems.cert };
+    console.log('Generated new self-signed cert in .certs/');
+  }
+
+  https.createServer(sslOptions, app).listen(HTTPS_PORT, () => {
+    console.log(`Mic-capture spike (HTTPS) listening on https://localhost:${HTTPS_PORT}`);
+    console.log('Open https://localhost:3443 in a browser, or load it as a Zoom App.');
+    logRelayTarget();
+  });
+
+  // Also listen on plain HTTP for convenience
+  app.listen(PORT, () => {
+    console.log(`(HTTP, non-Zoom)         listening on http://localhost:${PORT}`);
+  });
+} else {
+  const renderPort = process.env.PORT || PORT;
+  app.listen(renderPort, () => {
+    console.log(`Mic-capture spike listening on port ${renderPort} (Render mode — pass --local for the HTTPS/self-signed dev loop)`);
+    logRelayTarget();
+  });
+}

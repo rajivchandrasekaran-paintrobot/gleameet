@@ -28,16 +28,27 @@ The plan calls out two paths for getting audio out of a Zoom meeting:
 
 ## Run
 
+Two modes, controlled by a `--local` flag:
+
+**Local dev (against the Zoom desktop client):**
 ```bash
 npm install
-npm start
+npm run dev
 ```
-
-The server listens on:
+Listens on:
 - `https://localhost:3443` — for loading inside the Zoom desktop app
   (HTTPS is required; a self-signed cert is generated on first run in
   `.certs/`).
 - `http://localhost:3000` — convenience plain-HTTP for browser testing.
+
+**Render / production (default — no flag):**
+```bash
+npm start
+```
+Listens on plain HTTP on `process.env.PORT` (Render assigns this and
+terminates HTTPS at its own edge, so no self-signed cert is needed or
+generated in this mode). This is what Render's build should run as the
+start command.
 
 ## Relay to the Render backend (full behavioral loop)
 
