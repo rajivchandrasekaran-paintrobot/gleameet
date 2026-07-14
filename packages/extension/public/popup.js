@@ -24639,9 +24639,10 @@
     const negativeMeetingSignal = update.meetingDetected === false || update.meetingSessionId === null || update.status === "off";
     const recentlyPositive = Date.now() - lastPositiveMeetingAt < MEETING_NEGATIVE_GRACE_MS;
     const recentlyUserEnded = Date.now() - userRequestedEndAt < 1e4;
+    const acceptedEndReason = update.statusReason === "meeting-ended" || update.statusReason === "tracked-tab-removed" || update.statusReason === "tracked-tab-left-meeting-url";
     if (positiveMeetingSignal) {
       lastPositiveMeetingAt = Date.now();
-    } else if (negativeMeetingSignal && !recentlyUserEnded && recentlyPositive && (prev.meetingDetected || !!prev.meetingSessionId || prev.status === "active" || prev.status === "muted")) {
+    } else if (negativeMeetingSignal && !recentlyUserEnded && !acceptedEndReason && (!!prev.meetingSessionId || (prev.meetingDetected || prev.status === "active" || prev.status === "muted") && recentlyPositive)) {
       return {
         ...prev,
         authenticated: update.authenticated ?? prev.authenticated,
@@ -24749,7 +24750,8 @@
       meetingSessionId: null,
       authenticated: false,
       userId: null,
-      platform: null
+      platform: null,
+      statusReason: null
     });
     const [view, setView] = (0, import_react.useState)("main");
     const [meetings, setMeetings] = (0, import_react.useState)([]);
@@ -24772,7 +24774,8 @@
             meetingSessionId: response.meetingSessionId || null,
             authenticated: isAuthenticated,
             userId: response.userId || prev.userId,
-            platform: response.platform || null
+            platform: response.platform || null,
+            statusReason: response.statusReason || null
           }));
           void queryMeetingTabContext().then((tabState) => {
             if (!tabState) return;
@@ -24789,7 +24792,8 @@
                       status: res.status || prev.status,
                       meetingDetected: res.meetingDetected ?? prev.meetingDetected,
                       meetingSessionId: res.meetingSessionId || prev.meetingSessionId,
-                      platform: res.platform || prev.platform
+                      platform: res.platform || prev.platform,
+                      statusReason: res.statusReason || null
                     }));
                   }
                 });
@@ -24821,7 +24825,8 @@
             status: message.status,
             meetingDetected: message.meetingDetected ?? prev.meetingDetected,
             meetingSessionId: message.meetingSessionId,
-            platform: message.platform || null
+            platform: message.platform || null,
+            statusReason: message.statusReason || null
           }));
         }
       };

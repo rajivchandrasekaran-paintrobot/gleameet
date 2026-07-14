@@ -283,6 +283,28 @@ function shouldRediscoverMeetingFromUrl(): boolean {
   return isLikelyMeetingUrl() && getPlatform() === 'zoom';
 }
 
+
+function hasVisibleMeetingEndSignal(): boolean {
+  const platform = getPlatform();
+  const bodyText = document.body.textContent || '';
+
+  if (platform === 'zoom') {
+    return Array.from(document.querySelectorAll('.zm-modal-body-title, .zm-modal-body-content, [role="dialog"]'))
+      .some((el) => isVisibleElement(el) && /ended|left|removed/i.test(el.textContent || ''));
+  }
+
+  if (platform === 'teams') {
+    return !!document.querySelector('[data-tid="call-ended-screen"]') ||
+      /meeting has ended|call ended|you left the meeting/i.test(bodyText);
+  }
+
+  if (platform === 'google_meet') {
+    return /you left the meeting|return to home screen|rejoin|meeting has ended/i.test(bodyText);
+  }
+
+  return false;
+}
+
 function isVisibleElement(el: Element): boolean {
   const element = el as HTMLElement;
   const style = window.getComputedStyle(element);
@@ -308,8 +330,9 @@ function scheduleMeetingEndDebounce(): void {
   const debounceMs = state.status === 'active' || state.status === 'muted' ? 15000 : 5000;
   meetingEndDebounceTimer = setTimeout(() => {
     meetingEndDebounceTimer = null;
-    if (!detectMeeting() && !shouldTrustLikelyMeetingUrl()) {
-      onMeetingEnded();
+    const visibleEndSignal = hasVisibleMeetingEndSignal();
+    if (!detectMeeting() && (!shouldTrustLikelyMeetingUrl() || visibleEndSignal)) {
+      onMeetingEnded(visibleEndSignal);
     }
   }, debounceMs);
 }
@@ -362,12 +385,16 @@ function onMeetingDetected(): void {
   console.log('[GleaMeet] Meeting detected');
 }
 
-function onMeetingEnded(): void {
+function onMeetingEnded(visibleEndSignal = hasVisibleMeetingEndSignal()): void {
   state.meetingDetected = false;
 
   // Meeting ended — end session and generate report
   if (state.status === 'active' || state.status === 'muted' || state.status === 'ready') {
-    chrome.runtime.sendMessage({ type: 'MEETING_ENDED' }).catch(() => {});
+    chrome.runtime.sendMessage({
+      type: 'MEETING_ENDED',
+      visibleEndSignal,
+      likelyMeetingUrl: isLikelyMeetingUrl(),
+    }).catch(() => {});
   }
 
   state.status = 'off';

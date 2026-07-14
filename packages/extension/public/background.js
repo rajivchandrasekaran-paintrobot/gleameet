@@ -174,7 +174,7 @@ async function handleMessage(message, sender) {
       broadcastStatus();
       return { status: "ready" };
     case "MEETING_ENDED":
-      return handleMeetingEnded();
+      return handleMeetingEnded(message, sender);
     case "START_COACHING":
       if (state.meetingSessionId) {
         cancelTrackedMeetingTabCleanup();
@@ -226,11 +226,13 @@ async function handleMessage(message, sender) {
       await refreshMeetingContextFromTabs();
       if (state.meetingSessionId && state.meetingDetected && !state.coachingPausedByUser && !state.promptsMutedByUser && state.status !== "active") {
         state.status = "active";
+        state.meetingDetected = true;
         startSessionIntervals();
         broadcastStatus();
       }
       if (state.status === "muted" && !state.promptsMutedByUser && state.meetingSessionId) {
         state.status = "active";
+        state.meetingDetected = true;
         startSessionIntervals();
         broadcastStatus();
       }
@@ -419,9 +421,21 @@ async function handleStopCoaching() {
     return { error: err.message };
   }
 }
-async function handleMeetingEnded() {
+async function handleMeetingEnded(message = {}, sender) {
   try {
     cancelTrackedMeetingTabCleanup();
+    const senderUrl = sender?.tab?.url || "";
+    const senderTabStillLooksLikeMeeting = !!senderUrl && isLikelyMeetingUrl(senderUrl);
+    const liveUserControlledSession = !!state.meetingSessionId && !state.coachingPausedByUser && (state.status === "active" || state.status === "muted");
+    if (liveUserControlledSession && senderTabStillLooksLikeMeeting && message.visibleEndSignal !== true) {
+      state.meetingDetected = true;
+      state.platform = state.platform ?? detectPlatformFromUrl(senderUrl);
+      state.meetingTabId = sender?.tab?.id ?? state.meetingTabId;
+      state.status = state.promptsMutedByUser ? "muted" : "active";
+      startSessionIntervals();
+      broadcastStatus();
+      return { status: state.status, ignored: true, reason: "transient-negative-on-meeting-url" };
+    }
     const context = await getPreferredMeetingContext();
     const stillInActiveMeeting = !!context?.meetingDetected && (state.status === "active" || state.status === "muted" || !!state.meetingSessionId);
     if (stillInActiveMeeting) {
@@ -558,7 +572,7 @@ function handleStartAudioCapture(meetingSessionId, captureMode = state.captureMo
     });
   });
 }
-function broadcastStatus() {
+function broadcastStatus(statusReason) {
   persistActiveCoachingSession();
   chrome.runtime.sendMessage({
     type: "STATUS_UPDATE",
@@ -567,7 +581,8 @@ function broadcastStatus() {
     meetingSessionId: state.meetingSessionId,
     platform: state.platform,
     captureMode: state.captureMode,
-    promptsMutedByUser: state.promptsMutedByUser
+    promptsMutedByUser: state.promptsMutedByUser,
+    statusReason
   }).catch(() => {
   });
 }
@@ -659,7 +674,7 @@ async function cleanupActiveMeetingSession(reason) {
     state.promptsMutedByUser = false;
     state.coachingPausedByUser = false;
     chrome.storage.local.remove("activeCoachingSession");
-    broadcastStatus();
+    broadcastStatus(reason);
     return { status: "off" };
   })();
   try {
@@ -730,6 +745,11 @@ async function refreshMeetingContextFromTabs() {
     if (state.status === "ready" || state.status === "off") {
       state.status = "off";
     }
+    return;
+  }
+  state.meetingDetected = true;
+  if (!state.coachingPausedByUser) {
+    state.status = state.promptsMutedByUser ? "muted" : "active";
   }
 }
 async function getPreferredMeetingContext() {

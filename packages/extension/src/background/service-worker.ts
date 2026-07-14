@@ -138,7 +138,7 @@ async function handleMessage(message: any, sender?: chrome.runtime.MessageSender
       return { status: 'ready' };
 
     case 'MEETING_ENDED':
-      return handleMeetingEnded();
+      return handleMeetingEnded(message, sender);
 
     case 'START_COACHING':
       if (state.meetingSessionId) {
@@ -211,11 +211,13 @@ async function handleMessage(message: any, sender?: chrome.runtime.MessageSender
         state.status !== 'active'
       ) {
         state.status = 'active';
+        state.meetingDetected = true;
         startSessionIntervals();
         broadcastStatus();
       }
       if (state.status === 'muted' && !state.promptsMutedByUser && state.meetingSessionId) {
         state.status = 'active';
+        state.meetingDetected = true;
         startSessionIntervals();
         broadcastStatus();
       }
@@ -443,9 +445,26 @@ async function handleStopCoaching(): Promise<any> {
 }
 
 /** Handle the actual meeting tab leaving the call */
-async function handleMeetingEnded(): Promise<any> {
+async function handleMeetingEnded(message: any = {}, sender?: chrome.runtime.MessageSender): Promise<any> {
   try {
     cancelTrackedMeetingTabCleanup();
+
+    const senderUrl = sender?.tab?.url || '';
+    const senderTabStillLooksLikeMeeting = !!senderUrl && isLikelyMeetingUrl(senderUrl);
+    const liveUserControlledSession =
+      !!state.meetingSessionId &&
+      !state.coachingPausedByUser &&
+      (state.status === 'active' || state.status === 'muted');
+
+    if (liveUserControlledSession && senderTabStillLooksLikeMeeting && message.visibleEndSignal !== true) {
+      state.meetingDetected = true;
+      state.platform = state.platform ?? detectPlatformFromUrl(senderUrl);
+      state.meetingTabId = sender?.tab?.id ?? state.meetingTabId;
+      state.status = state.promptsMutedByUser ? 'muted' : 'active';
+      startSessionIntervals();
+      broadcastStatus();
+      return { status: state.status, ignored: true, reason: 'transient-negative-on-meeting-url' };
+    }
 
     const context = await getPreferredMeetingContext();
     const stillInActiveMeeting =
@@ -613,7 +632,7 @@ function handleStartAudioCapture(meetingSessionId: string, captureMode: CaptureM
 }
 
 /** Broadcast session status to all extension tabs */
-function broadcastStatus(): void {
+function broadcastStatus(statusReason?: string): void {
   persistActiveCoachingSession();
   chrome.runtime.sendMessage({
     type: 'STATUS_UPDATE',
@@ -623,6 +642,7 @@ function broadcastStatus(): void {
     platform: state.platform,
     captureMode: state.captureMode,
     promptsMutedByUser: state.promptsMutedByUser,
+    statusReason,
   }).catch(() => {}); // Ignore if no listeners
 }
 
@@ -719,7 +739,7 @@ async function cleanupActiveMeetingSession(reason: string): Promise<any> {
     state.coachingPausedByUser = false;
 
     chrome.storage.local.remove('activeCoachingSession');
-    broadcastStatus();
+    broadcastStatus(reason);
     return { status: 'off' };
   })();
 
@@ -811,6 +831,15 @@ async function refreshMeetingContextFromTabs(): Promise<void> {
     if (state.status === 'ready' || state.status === 'off') {
       state.status = 'off';
     }
+    return;
+  }
+
+  // Once the user starts coaching, weak/negative detector results must not
+  // change the visible session state. Only explicit user actions, verified
+  // meeting end signals, tab close, or navigation away may tear it down.
+  state.meetingDetected = true;
+  if (!state.coachingPausedByUser) {
+    state.status = state.promptsMutedByUser ? 'muted' : 'active';
   }
 }
 
