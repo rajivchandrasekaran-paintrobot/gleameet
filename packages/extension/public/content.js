@@ -330,7 +330,7 @@
     return isLikelyMeetingUrl() && getPlatform() === "zoom";
   }
   function isExplicitTeardownReason(reason) {
-    return reason === "meeting-ended" || reason === "tracked-tab-removed" || reason === "tracked-tab-left-meeting-url";
+    return reason === "meeting-ended" || reason === "coaching-ended-by-user" || reason === "tracked-tab-removed" || reason === "tracked-tab-left-meeting-url";
   }
   function shouldIgnoreStaleStatusDowngrade(message) {
     const statusReason = message.statusReason;

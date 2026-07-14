@@ -24639,7 +24639,7 @@
     const negativeMeetingSignal = update.meetingDetected === false || update.meetingSessionId === null || update.status === "off";
     const recentlyPositive = Date.now() - lastPositiveMeetingAt < MEETING_NEGATIVE_GRACE_MS;
     const recentlyUserEnded = Date.now() - userRequestedEndAt < 1e4;
-    const acceptedEndReason = update.statusReason === "meeting-ended" || update.statusReason === "tracked-tab-removed" || update.statusReason === "tracked-tab-left-meeting-url";
+    const acceptedEndReason = update.statusReason === "meeting-ended" || update.statusReason === "coaching-ended-by-user" || update.statusReason === "tracked-tab-removed" || update.statusReason === "tracked-tab-left-meeting-url";
     if (positiveMeetingSignal) {
       lastPositiveMeetingAt = Date.now();
     } else if (negativeMeetingSignal && !recentlyUserEnded && !acceptedEndReason && (!!prev.meetingSessionId || (prev.meetingDetected || prev.status === "active" || prev.status === "muted") && recentlyPositive)) {
@@ -24912,14 +24912,11 @@
       chrome.runtime.sendMessage({ type: "STOP_COACHING" });
     };
     const handleEndMeeting = () => {
-      userRequestedEndAt = Date.now();
-      lastPositiveMeetingAt = 0;
       setState((prev) => ({
         ...prev,
-        status: "off",
-        meetingDetected: false,
-        meetingSessionId: null,
-        platform: null
+        status: prev.meetingDetected ? "ready" : "off",
+        meetingDetected: prev.meetingDetected,
+        meetingSessionId: null
       }));
       chrome.runtime.sendMessage({ type: "END_MEETING" });
     };

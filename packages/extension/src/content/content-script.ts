@@ -286,6 +286,7 @@ function shouldRediscoverMeetingFromUrl(): boolean {
 
 function isExplicitTeardownReason(reason: StatusReason | null | undefined): boolean {
   return reason === 'meeting-ended' ||
+    reason === 'coaching-ended-by-user' ||
     reason === 'tracked-tab-removed' ||
     reason === 'tracked-tab-left-meeting-url';
 }

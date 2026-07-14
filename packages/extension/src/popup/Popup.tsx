@@ -92,6 +92,7 @@ function reconcilePopupState(prev: PopupState, update: Partial<PopupState>): Pop
   const recentlyUserEnded = Date.now() - userRequestedEndAt < 10000;
   const acceptedEndReason =
     update.statusReason === 'meeting-ended' ||
+    update.statusReason === 'coaching-ended-by-user' ||
     update.statusReason === 'tracked-tab-removed' ||
     update.statusReason === 'tracked-tab-left-meeting-url';
 
@@ -422,14 +423,11 @@ export const Popup: React.FC = () => {
   };
 
   const handleEndMeeting = () => {
-    userRequestedEndAt = Date.now();
-    lastPositiveMeetingAt = 0;
     setState(prev => ({
       ...prev,
-      status: 'off',
-      meetingDetected: false,
+      status: prev.meetingDetected ? 'ready' : 'off',
+      meetingDetected: prev.meetingDetected,
       meetingSessionId: null,
-      platform: null,
     }));
     chrome.runtime.sendMessage({ type: 'END_MEETING' });
   };

@@ -409,6 +409,7 @@ async function handlePauseCoaching(): Promise<any> {
 async function handleStopCoaching(): Promise<any> {
   try {
     cancelTrackedMeetingTabCleanup();
+    const meetingContext = await getPreferredMeetingContext();
 
     if (state.meetingSessionId) {
       // Flush remaining events
@@ -428,7 +429,9 @@ async function handleStopCoaching(): Promise<any> {
       await sendMessageToMeetingTabs({ type: 'DISMISS_ALL_PROMPTS' });
 
       state.meetingSessionId = null;
-      state.meetingTabId = null;
+      state.meetingDetected = meetingContext?.meetingDetected ?? state.meetingDetected;
+      state.platform = meetingContext?.platform ?? state.platform;
+      state.meetingTabId = meetingContext?.tabId ?? state.meetingTabId;
       state.status = state.meetingDetected ? 'ready' : 'off';
       state.eventBuffer = [];
       state.captureMode = 'full_meeting';
@@ -437,19 +440,24 @@ async function handleStopCoaching(): Promise<any> {
       state.batchInterval = null;
       state.pollingInterval = null;
       if (!state.meetingDetected) {
+        state.meetingTabId = null;
         state.platform = null;
       }
 
-      broadcastStatus();
+      broadcastStatus('coaching-ended-by-user');
       return { status: state.status, reportId: result.report_id };
     }
 
+    state.meetingDetected = meetingContext?.meetingDetected ?? state.meetingDetected;
+    state.platform = meetingContext?.platform ?? state.platform;
+    state.meetingTabId = meetingContext?.tabId ?? state.meetingTabId;
     state.status = state.meetingDetected ? 'ready' : 'off';
     state.coachingPausedByUser = false;
     if (!state.meetingDetected) {
+      state.meetingTabId = null;
       state.platform = null;
     }
-    broadcastStatus();
+    broadcastStatus('coaching-ended-by-user');
     return { status: state.status };
   } catch (err: any) {
     state.status = 'error';
