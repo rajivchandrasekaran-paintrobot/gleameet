@@ -1,6 +1,7 @@
 import { evaluateLaws } from '../src/law-engine/law-evaluator';
 import { MeetingState } from '../src/db/redis';
-import { FeatureSnapshot } from '../src/features/feature-engine';
+import { FeatureSnapshot, processEvents } from '../src/features/feature-engine';
+import { RawEvent } from '@gleameet/shared';
 
 // Mock Redis to avoid real connections
 jest.mock('../src/db/redis', () => ({
@@ -62,6 +63,20 @@ function createState(overrides: Partial<MeetingState> = {}): MeetingState {
   };
 }
 
+function makeTranscriptEvent(text: string): RawEvent {
+  return {
+    event_id: `evt-${Math.random().toString(36).slice(2)}`,
+    meeting_session_id: 'test-session',
+    user_id: 'test-user',
+    platform: 'google_meet',
+    event_type: 'transcript_segment',
+    event_time_utc: new Date().toISOString(),
+    source: 'extension',
+    capture_confidence: 0.9,
+    payload: { text, speaker: 'user', start_offset_ms: 0, end_offset_ms: 100 },
+  };
+}
+
 describe('Law Evaluator', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -84,15 +99,16 @@ describe('Law Evaluator', () => {
     const triggers = await evaluateLaws('test-session', features, state);
     const k01 = triggers.find(t => t.law_id === 'K-01');
     expect(k01).toBeDefined();
-    expect(k01!.trigger_confidence).toBeCloseTo(0.625, 3);
+    expect(k01!.trigger_confidence).toBeCloseTo(0.7, 3);
   });
 
   test('K-01: triggers when response latency is very low (high signal)', async () => {
     const features: FeatureSnapshot = {
       disagreement_detected: true,
-      response_latency_seconds: 1.0, // Closer to threshold, higher normalized strength
+      response_latency_seconds: 0.5,
       acknowledgment_count: 0,
       clarifying_question_count: 0,
+      turn_count: 3,
     };
     const state = createState();
     const triggers = await evaluateLaws('test-session', features, state);
@@ -128,6 +144,22 @@ describe('Law Evaluator', () => {
     // confidence = 0.4 + 0.3 = 0.7 — at threshold 0.70
     expect(k02).toBeDefined();
     expect(k02!.trigger_confidence).toBeGreaterThanOrEqual(0.70);
+  });
+
+  test('live laws can trigger from mic-only transcript activity', async () => {
+    const state = createState({ turn_count: 0 });
+    const features = await processEvents([
+      makeTranscriptEvent('I think the risk is that we miss the deadline.'),
+      makeTranscriptEvent('The downside is a real problem for cost.'),
+      makeTranscriptEvent('We could fail if we do not address this.'),
+    ], state);
+
+    expect(state.turn_count).toBe(0);
+    expect(features.turn_count).toBe(3);
+
+    const triggers = await evaluateLaws('test-session', features, state);
+    expect(triggers.some(t => t.law_id === 'K-02')).toBe(true);
+    expect(triggers.some(t => t.law_id === 'C-01')).toBe(true);
   });
 
   test('K-02: suppressed when gain_frame >= 0.4', async () => {

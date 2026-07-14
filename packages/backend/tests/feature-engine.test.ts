@@ -39,6 +39,7 @@ function createMeetingState(overrides: Partial<MeetingState> = {}): MeetingState
     shared_goal_language_present: false,
     law_trigger_ids: [],
     prompt_ids: [],
+    recent_prompt_law_ids: [],
     recent_transcript: [],
     ...overrides,
   };
@@ -379,6 +380,20 @@ describe('Feature Engine - Timing Features', () => {
     ];
     const features = await processEvents(events, state);
     expect(features.turn_count).toBe(2);
+  });
+
+  test('uses user transcript activity when explicit turn changes are absent', async () => {
+    const state = createMeetingState();
+    const events = [
+      makeTranscriptEvent('I think the risk is that we miss the deadline.'),
+      makeTranscriptEvent('We should discuss the downside before deciding.'),
+      makeTranscriptEvent('The problem is the cost could grow quickly.'),
+    ];
+
+    const features = await processEvents(events, state);
+
+    expect(state.turn_count).toBe(0);
+    expect(features.turn_count).toBe(3);
   });
 
   test('tracks interruption count', async () => {

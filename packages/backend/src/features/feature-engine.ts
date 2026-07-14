@@ -484,13 +484,17 @@ function computeFeatureSnapshot(state: MeetingState): FeatureSnapshot {
   const lossFrameScore = Math.min(state.loss_frame_hits / segCount, 1.0);
   const gainFrameScore = Math.min(state.gain_frame_hits / segCount, 1.0);
   const actionSpecificityScore = Math.min(state.action_specificity_hits / segCount, 1.0);
+  const activityCount = Math.max(state.turn_count, state.transcript_segment_count);
 
   return {
     // Timing features
     speaking_time_total_seconds: state.speaking_time_total_ms / 1000,
     speaking_share_percent: speakingShare,
     current_continuous_speaking_seconds: currentContinuousSpeaking,
-    turn_count: state.turn_count,
+    // Audio-only capture often sees the user's mic transcript before it can
+    // reliably attribute other-speaker captions. Keep law gates alive by using
+    // user transcript activity as a fallback conversation activity signal.
+    turn_count: activityCount,
     interruption_count: state.interruption_count,
     response_latency_seconds: responseLatency,
 
