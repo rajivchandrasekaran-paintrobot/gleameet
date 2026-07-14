@@ -24633,6 +24633,7 @@
     const [loading, setLoading] = (0, import_react.useState)(false);
     const [error, setError] = (0, import_react.useState)(null);
     const [deletingId, setDeletingId] = (0, import_react.useState)(null);
+    const [captureMode, setCaptureMode] = (0, import_react.useState)("full_meeting");
     (0, import_react.useEffect)(() => {
       let statusPoll = null;
       const refreshStatus = () => {
@@ -24677,6 +24678,11 @@
             authenticated: true,
             userId: items.userId || prev.userId
           }));
+        }
+      });
+      chrome.storage.sync.get({ captureMode: "full_meeting" }, (items) => {
+        if (items.captureMode === "user_voice_only" || items.captureMode === "full_meeting") {
+          setCaptureMode(items.captureMode);
         }
       });
       refreshStatus();
@@ -24737,9 +24743,15 @@
         }
       });
     };
+    const handleCaptureModeChange = (mode) => {
+      setCaptureMode(mode);
+      chrome.storage.sync.set({ captureMode: mode });
+    };
     const handleStartCoaching = () => {
+      const captureOtherParticipants = captureMode !== "user_voice_only";
       chrome.runtime.sendMessage({
         type: "START_COACHING",
+        captureMode,
         consent: {
           consent_version: "1.0",
           scope: {
@@ -24747,7 +24759,9 @@
             capture_transcript: true,
             capture_timing: true,
             live_coaching: true,
-            post_meeting_report: true
+            post_meeting_report: true,
+            capture_mode: captureMode,
+            capture_other_participants: captureOtherParticipants
           }
         }
       });
@@ -25118,23 +25132,39 @@
           "..."
         ] })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "controls", children: !state.authenticated ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-primary", onClick: handleSignIn, children: "Sign In" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
-        state.status === "ready" && state.meetingSessionId && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-primary", onClick: handleStartCoaching, children: "Resume Coaching" }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-danger", onClick: handleEndMeeting, children: "End Meeting" })
-        ] }),
-        state.status === "ready" && !state.meetingSessionId && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-primary", onClick: handleStartCoaching, children: "Start Coaching" }),
-        state.status === "active" && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-secondary", onClick: handleMute, children: "Mute Prompts" }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-danger", onClick: handleStopCoaching, children: "Stop Coaching" })
-        ] }),
-        state.status === "muted" && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-primary", onClick: handleUnmute, children: "Resume Prompts" }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-danger", onClick: handleStopCoaching, children: "Stop Coaching" })
-        ] }),
-        state.status === "off" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { style: { fontSize: "13px", color: "#6b6b80", textAlign: "center" }, children: "Join a supported Google Meet, Teams, or Zoom web meeting to start coaching" }),
-        state.status === "error" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { style: { fontSize: "13px", color: "#cc0000", textAlign: "center" }, children: "Connection error. Please try again." })
-      ] }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "controls", children: [
+        state.status !== "active" && state.status !== "muted" && !state.meetingSessionId && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "capture-mode", children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", { className: "capture-mode-option", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+            "input",
+            {
+              type: "checkbox",
+              checked: captureMode === "user_voice_only",
+              onChange: (e) => handleCaptureModeChange(e.target.checked ? "user_voice_only" : "full_meeting")
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: "Use only my voice" }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("small", { children: "No tab audio or meeting captions from others" })
+          ] })
+        ] }) }),
+        !state.authenticated ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-primary", onClick: handleSignIn, children: "Sign In" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
+          state.status === "ready" && state.meetingSessionId && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-primary", onClick: handleStartCoaching, children: "Resume Coaching" }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-danger", onClick: handleEndMeeting, children: "End Meeting" })
+          ] }),
+          state.status === "ready" && !state.meetingSessionId && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-primary", onClick: handleStartCoaching, children: "Start Coaching" }),
+          state.status === "active" && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-secondary", onClick: handleMute, children: "Mute Prompts" }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-danger", onClick: handleStopCoaching, children: "Stop Coaching" })
+          ] }),
+          state.status === "muted" && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-primary", onClick: handleUnmute, children: "Resume Prompts" }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-danger", onClick: handleStopCoaching, children: "Stop Coaching" })
+          ] }),
+          state.status === "off" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { style: { fontSize: "13px", color: "#6b6b80", textAlign: "center" }, children: "Join a supported Google Meet, Teams, or Zoom web meeting to start coaching" }),
+          state.status === "error" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { style: { fontSize: "13px", color: "#cc0000", textAlign: "center" }, children: "Connection error. Please try again." })
+        ] })
+      ] }),
       state.authenticated && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { textAlign: "center", marginTop: "12px" }, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
         "a",
         {

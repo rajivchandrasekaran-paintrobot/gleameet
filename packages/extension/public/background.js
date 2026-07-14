@@ -112,7 +112,8 @@ var state = {
   status: "off",
   eventBuffer: [],
   pollingInterval: null,
-  batchInterval: null
+  batchInterval: null,
+  captureMode: "full_meeting"
 };
 var authStateReady = new Promise((resolve) => {
   chrome.storage.local.get(["sessionToken", "userId"], (data) => {
@@ -150,7 +151,8 @@ async function handleMessage(message) {
           type: "COACHING_STARTED",
           meetingSessionId: state.meetingSessionId,
           userId: state.userId,
-          platform: state.platform
+          platform: state.platform,
+          captureMode: state.captureMode
         });
         return { status: "active", meetingSessionId: state.meetingSessionId, resumed: true };
       }
@@ -204,7 +206,7 @@ async function handleMessage(message) {
     case "ACK_PROMPT":
       return handleAckPrompt(message);
     case "START_AUDIO_CAPTURE":
-      handleStartAudioCapture(message.meetingSessionId);
+      handleStartAudioCapture(message.meetingSessionId, message.captureMode);
       return { ok: true };
     case "STOP_AUDIO_CAPTURE":
       chrome.runtime.sendMessage({ type: "STOP_MIC_CAPTURE" }).catch(() => {
@@ -254,25 +256,30 @@ async function handleStartCoaching(message) {
     if (!platform) {
       return { error: "No supported web meeting tab detected." };
     }
+    const captureMode = message.captureMode === "user_voice_only" ? "user_voice_only" : "full_meeting";
     const request = {
       platform,
       meeting_label: message.meetingLabel || null,
       extension_version: chrome.runtime.getManifest().version,
       consent: message.consent
     };
+    request.consent.scope.capture_mode = captureMode;
+    request.consent.scope.capture_other_participants = captureMode !== "user_voice_only";
     const response = await startMeeting(request);
     state.meetingSessionId = response.meeting_session_id;
     state.platform = platform;
     state.meetingDetected = true;
     state.status = "active";
     state.eventBuffer = [];
+    state.captureMode = captureMode;
     state.batchInterval = setInterval(flushEventBuffer, 3e3);
     state.pollingInterval = setInterval(pollForPrompts, 2e3);
     await sendMessageToMeetingTabs({
       type: "COACHING_STARTED",
       meetingSessionId: response.meeting_session_id,
       userId: state.userId,
-      platform
+      platform,
+      captureMode
     });
     broadcastStatus();
     return { status: "active", meetingSessionId: response.meeting_session_id };
@@ -314,6 +321,7 @@ async function handleStopCoaching() {
       state.meetingSessionId = null;
       state.status = state.meetingDetected ? "ready" : "off";
       state.eventBuffer = [];
+      state.captureMode = "full_meeting";
       state.batchInterval = null;
       state.pollingInterval = null;
       if (!state.meetingDetected) {
@@ -356,6 +364,7 @@ async function handleMeetingEnded() {
     state.platform = null;
     state.status = "off";
     state.eventBuffer = [];
+    state.captureMode = "full_meeting";
     broadcastStatus();
     return { status: "off" };
   } catch (err) {
@@ -417,7 +426,7 @@ function ensureOffscreenDocument() {
   }).catch(() => {
   });
 }
-function handleStartAudioCapture(meetingSessionId) {
+function handleStartAudioCapture(meetingSessionId, captureMode = state.captureMode) {
   const token = getSessionToken();
   const apiBase = "https://gleameet.onrender.com";
   ensureOffscreenDocument().then(() => {
@@ -428,6 +437,10 @@ function handleStartAudioCapture(meetingSessionId) {
       apiBase
     }).catch(() => {
     });
+    if (captureMode === "user_voice_only") {
+      console.log("[GleaMeet] User-voice-only mode: skipping tab audio capture");
+      return;
+    }
     getPreferredMeetingTab((tab) => {
       if (!tab?.id) return;
       chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id }, (streamId) => {
@@ -545,7 +558,8 @@ async function sendMessageToMeetingTabs(message) {
             type: "COACHING_STARTED",
             meetingSessionId: state.meetingSessionId,
             userId: state.userId,
-            platform: state.platform
+            platform: state.platform,
+            captureMode: state.captureMode
           });
         } catch (_syncErr) {
         }

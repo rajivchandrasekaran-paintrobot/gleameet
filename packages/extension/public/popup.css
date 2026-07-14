@@ -69,6 +69,39 @@ body {
   flex-direction: column;
   gap: 8px;
 }
+.capture-mode {
+  padding: 10px;
+  border: 1px solid #e8e8ec;
+  border-radius: 6px;
+  background: #fafafc;
+}
+.capture-mode-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+}
+.capture-mode-option input {
+  margin-top: 2px;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+.capture-mode-option span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+.capture-mode-option strong {
+  font-size: 13px;
+  color: #1a1a2e;
+}
+.capture-mode-option small {
+  font-size: 11px;
+  line-height: 1.35;
+  color: #6b6b80;
+}
 .btn {
   padding: 8px 16px;
   border: none;

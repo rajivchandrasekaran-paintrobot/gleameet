@@ -6,6 +6,7 @@ import type { Platform, PostMeetingReport, TranscriptWithNudgesEntry } from '@gl
 type SessionStatus = 'off' | 'ready' | 'active' | 'muted' | 'error';
 type View = 'main' | 'history' | 'transcript' | 'report';
 type ReportTab = 'summary' | 'transcript-nudges';
+type CaptureMode = 'full_meeting' | 'user_voice_only';
 
 interface PopupState {
   status: SessionStatus;
@@ -78,6 +79,7 @@ export const Popup: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [captureMode, setCaptureMode] = useState<CaptureMode>('full_meeting');
 
   useEffect(() => {
     let statusPoll: ReturnType<typeof setInterval> | null = null;
@@ -128,6 +130,11 @@ export const Popup: React.FC = () => {
           authenticated: true,
           userId: items.userId || prev.userId,
         }));
+      }
+    });
+    chrome.storage.sync.get({ captureMode: 'full_meeting' }, (items) => {
+      if (items.captureMode === 'user_voice_only' || items.captureMode === 'full_meeting') {
+        setCaptureMode(items.captureMode);
       }
     });
 
@@ -196,9 +203,16 @@ export const Popup: React.FC = () => {
     });
   };
 
+  const handleCaptureModeChange = (mode: CaptureMode) => {
+    setCaptureMode(mode);
+    chrome.storage.sync.set({ captureMode: mode });
+  };
+
   const handleStartCoaching = () => {
+    const captureOtherParticipants = captureMode !== 'user_voice_only';
     chrome.runtime.sendMessage({
       type: 'START_COACHING',
+      captureMode,
       consent: {
         consent_version: '1.0',
         scope: {
@@ -207,6 +221,8 @@ export const Popup: React.FC = () => {
           capture_timing: true,
           live_coaching: true,
           post_meeting_report: true,
+          capture_mode: captureMode,
+          capture_other_participants: captureOtherParticipants,
         },
       },
     });
@@ -665,6 +681,22 @@ export const Popup: React.FC = () => {
 
       {/* Controls */}
       <div className="controls">
+        {state.status !== 'active' && state.status !== 'muted' && !state.meetingSessionId && (
+          <div className="capture-mode">
+            <label className="capture-mode-option">
+              <input
+                type="checkbox"
+                checked={captureMode === 'user_voice_only'}
+                onChange={(e) => handleCaptureModeChange(e.target.checked ? 'user_voice_only' : 'full_meeting')}
+              />
+              <span>
+                <strong>Use only my voice</strong>
+                <small>No tab audio or meeting captions from others</small>
+              </span>
+            </label>
+          </div>
+        )}
+
         {!state.authenticated ? (
           <button className="btn btn-primary" onClick={handleSignIn}>
             Sign In

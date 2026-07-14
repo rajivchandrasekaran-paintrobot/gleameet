@@ -23,6 +23,8 @@ export interface MeetingStartRequest {
       capture_timing: boolean;
       live_coaching: boolean;
       post_meeting_report: boolean;
+      capture_mode?: 'full_meeting' | 'user_voice_only';
+      capture_other_participants?: boolean;
     };
   };
 }

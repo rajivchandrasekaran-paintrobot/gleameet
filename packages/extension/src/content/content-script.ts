@@ -12,6 +12,8 @@ import { detectPlatformFromUrl, getPlatformCapabilities } from '../utils/platfor
 import { TranscriptAttributionTracker } from '../utils/transcript-attribution';
 import type { Platform, PromptEvent, TranscriptSource } from '@gleameet/shared';
 
+type CaptureMode = 'full_meeting' | 'user_voice_only';
+
 /** Session context maintained by the content script */
 interface ContentState {
   meetingDetected: boolean;
@@ -29,6 +31,7 @@ interface ContentState {
   eventsEmitted: number;
   diagnosticInterval: ReturnType<typeof setInterval> | null;
   selfNames: Set<string>;
+  captureMode: CaptureMode;
 }
 
 const state: ContentState = {
@@ -47,6 +50,7 @@ const state: ContentState = {
   eventsEmitted: 0,
   diagnosticInterval: null,
   selfNames: new Set<string>(),
+  captureMode: 'full_meeting',
 };
 
 // Caption selectors — ordered by likelihood, all tried on every DOM mutation
@@ -304,7 +308,7 @@ function startSignalCapture(): void {
   if (capabilities.supportsDomSpeechSignals) {
     observeSpeechIndicators();
   }
-  if (capabilities.supportsDomCaptions) {
+  if (capabilities.supportsDomCaptions && state.captureMode !== 'user_voice_only') {
     observeCaptions();
   }
   if (!capabilities.supportsDomSpeechSignals && capabilities.supportsMicSpeechDetection) {
@@ -316,6 +320,7 @@ function startSignalCapture(): void {
   chrome.runtime.sendMessage({
     type: "START_AUDIO_CAPTURE",
     meetingSessionId: state.meetingSessionId,
+    captureMode: state.captureMode,
   }).catch(() => {});
 
   // Emit session state change event
@@ -331,7 +336,7 @@ function startSignalCapture(): void {
     const captionEls = platform === 'google_meet'
       ? CAPTION_SELECTORS.flatMap(sel => Array.from(document.querySelectorAll(sel))).length
       : 0;
-    console.log(`[GleaMeet] Diagnostics [${platform}]: events_emitted=${state.eventsEmitted}, speech_active=${state.userSpeaking}, recognition_running=${!!recognition}, caption_elements_found=${captionEls}`);
+    console.log(`[GleaMeet] Diagnostics [${platform}]: events_emitted=${state.eventsEmitted}, speech_active=${state.userSpeaking}, recognition_running=${!!recognition}, capture_mode=${state.captureMode}, caption_elements_found=${captionEls}`);
   }, 10000);
 
 }
@@ -891,6 +896,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       state.meetingDetected = message.meetingDetected ?? state.meetingDetected;
       state.meetingSessionId = message.meetingSessionId;
       state.platform = message.platform ?? state.platform ?? getPlatform();
+      state.captureMode = message.captureMode === 'user_voice_only' ? 'user_voice_only' : state.captureMode;
       updateStatusIndicator();
       if (
         (previousStatus === 'active' || previousStatus === 'muted') &&
@@ -919,6 +925,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       state.meetingSessionId = message.meetingSessionId;
       state.userId = message.userId;
       state.platform = message.platform ?? getPlatform();
+      state.captureMode = message.captureMode === 'user_voice_only' ? 'user_voice_only' : 'full_meeting';
       state.status = 'active';
       state.meetingDetected = true;
       updateStatusIndicator();
@@ -932,6 +939,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     case 'AUDIO_TRANSCRIPT_RESULT': {
       whisperActive = true;
       const stream = message.stream as 'mic' | 'tab';
+      if (state.captureMode === 'user_voice_only' && stream !== 'mic') {
+        break;
+      }
       const candidateSpeaker =
         stream === 'mic'
           ? 'user'

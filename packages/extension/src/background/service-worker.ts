@@ -8,6 +8,8 @@ import { setSessionToken, getSessionToken, sendEventBatch, pollPrompts, endMeeti
 import { detectPlatformFromUrl, MEETING_TAB_URL_PATTERNS } from '../utils/platform';
 import type { RawEvent, MeetingStartRequest, PromptEvent, PromptAckRequest, Platform } from '@gleameet/shared';
 
+type CaptureMode = 'full_meeting' | 'user_voice_only';
+
 /** Current meeting session state */
 interface SessionState {
   meetingDetected: boolean;
@@ -18,6 +20,7 @@ interface SessionState {
   eventBuffer: RawEvent[];
   pollingInterval: ReturnType<typeof setInterval> | null;
   batchInterval: ReturnType<typeof setInterval> | null;
+  captureMode: CaptureMode;
 }
 
 interface TabMeetingContext {
@@ -40,6 +43,7 @@ const state: SessionState = {
   eventBuffer: [],
   pollingInterval: null,
   batchInterval: null,
+  captureMode: 'full_meeting',
 };
 
 const authStateReady = new Promise<void>((resolve) => {
@@ -90,6 +94,7 @@ async function handleMessage(message: any): Promise<any> {
           meetingSessionId: state.meetingSessionId,
           userId: state.userId,
           platform: state.platform,
+          captureMode: state.captureMode,
         });
         return { status: 'active', meetingSessionId: state.meetingSessionId, resumed: true };
       }
@@ -156,7 +161,7 @@ async function handleMessage(message: any): Promise<any> {
       return handleAckPrompt(message);
 
     case 'START_AUDIO_CAPTURE':
-      handleStartAudioCapture(message.meetingSessionId);
+      handleStartAudioCapture(message.meetingSessionId, message.captureMode);
       return { ok: true };
 
     case 'STOP_AUDIO_CAPTURE':
@@ -216,12 +221,15 @@ async function handleStartCoaching(message: any): Promise<any> {
       return { error: 'No supported web meeting tab detected.' };
     }
 
+    const captureMode: CaptureMode = message.captureMode === 'user_voice_only' ? 'user_voice_only' : 'full_meeting';
     const request: MeetingStartRequest = {
       platform,
       meeting_label: message.meetingLabel || null,
       extension_version: chrome.runtime.getManifest().version,
       consent: message.consent,
     };
+    request.consent.scope.capture_mode = captureMode;
+    request.consent.scope.capture_other_participants = captureMode !== 'user_voice_only';
 
     const response = await startMeeting(request);
     state.meetingSessionId = response.meeting_session_id;
@@ -229,6 +237,7 @@ async function handleStartCoaching(message: any): Promise<any> {
     state.meetingDetected = true;
     state.status = 'active';
     state.eventBuffer = [];
+    state.captureMode = captureMode;
 
     // Start event batching every 3 seconds (per SRS)
     state.batchInterval = setInterval(flushEventBuffer, 3000);
@@ -242,6 +251,7 @@ async function handleStartCoaching(message: any): Promise<any> {
       meetingSessionId: response.meeting_session_id,
       userId: state.userId,
       platform,
+      captureMode,
     });
 
     broadcastStatus();
@@ -294,6 +304,7 @@ async function handleStopCoaching(): Promise<any> {
       state.meetingSessionId = null;
       state.status = state.meetingDetected ? 'ready' : 'off';
       state.eventBuffer = [];
+      state.captureMode = 'full_meeting';
       state.batchInterval = null;
       state.pollingInterval = null;
       if (!state.meetingDetected) {
@@ -336,6 +347,7 @@ async function handleMeetingEnded(): Promise<any> {
     state.platform = null;
     state.status = 'off';
     state.eventBuffer = [];
+    state.captureMode = 'full_meeting';
 
     broadcastStatus();
     return { status: 'off' };
@@ -414,8 +426,8 @@ function ensureOffscreenDocument(): Promise<void> {
   });
 }
 
-/** Start user-only audio capture via offscreen document */
-function handleStartAudioCapture(meetingSessionId: string): void {
+/** Start audio capture via offscreen document */
+function handleStartAudioCapture(meetingSessionId: string, captureMode: CaptureMode = state.captureMode): void {
   const token = getSessionToken();
   const apiBase = 'https://gleameet.onrender.com';
 
@@ -426,6 +438,11 @@ function handleStartAudioCapture(meetingSessionId: string): void {
       sessionToken: token,
       apiBase,
     }).catch(() => {});
+
+    if (captureMode === 'user_voice_only') {
+      console.log('[GleaMeet] User-voice-only mode: skipping tab audio capture');
+      return;
+    }
 
     getPreferredMeetingTab((tab) => {
       if (!tab?.id) return;
@@ -580,6 +597,7 @@ async function sendMessageToMeetingTabs(message: MeetingTabMessage): Promise<voi
             meetingSessionId: state.meetingSessionId,
             userId: state.userId,
             platform: state.platform,
+            captureMode: state.captureMode,
           });
         } catch (_syncErr) {
           // If the tab still isn't ready, the main message send below will no-op safely.
