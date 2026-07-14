@@ -344,7 +344,7 @@
     const debounceMs = state.status === "active" || state.status === "muted" ? 15e3 : 5e3;
     meetingEndDebounceTimer = setTimeout(() => {
       meetingEndDebounceTimer = null;
-      if (!detectMeeting()) {
+      if (!detectMeeting() && !shouldTrustLikelyMeetingUrl()) {
         onMeetingEnded();
       }
     }, debounceMs);

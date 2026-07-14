@@ -344,6 +344,17 @@ async function handleStopCoaching() {
 }
 async function handleMeetingEnded() {
   try {
+    const context = await getPreferredMeetingContext();
+    const stillInActiveMeeting = !!context?.meetingDetected && (state.status === "active" || state.status === "muted" || !!state.meetingSessionId);
+    if (stillInActiveMeeting) {
+      state.meetingDetected = true;
+      state.platform = context.platform ?? state.platform;
+      if (state.status === "off") {
+        state.status = context.status === "active" || context.status === "muted" ? context.status : "ready";
+      }
+      broadcastStatus();
+      return { status: state.status, ignored: true };
+    }
     state.meetingDetected = false;
     if (state.meetingSessionId) {
       await flushEventBuffer().catch(() => {

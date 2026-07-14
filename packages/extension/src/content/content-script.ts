@@ -300,7 +300,7 @@ function scheduleMeetingEndDebounce(): void {
   const debounceMs = state.status === 'active' || state.status === 'muted' ? 15000 : 5000;
   meetingEndDebounceTimer = setTimeout(() => {
     meetingEndDebounceTimer = null;
-    if (!detectMeeting()) {
+    if (!detectMeeting() && !shouldTrustLikelyMeetingUrl()) {
       onMeetingEnded();
     }
   }, debounceMs);
