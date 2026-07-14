@@ -42,6 +42,18 @@ interface MeetingTabMessage {
   [key: string]: unknown;
 }
 
+interface PersistedActiveCoachingSession {
+  meetingSessionId: string;
+  userId: string | null;
+  platform: Platform | null;
+  meetingTabId: number | null;
+  status: SessionState['status'];
+  captureMode: CaptureMode;
+  promptsMutedByUser: boolean;
+  coachingPausedByUser: boolean;
+  updatedAt: number;
+}
+
 const state: SessionState = {
   meetingDetected: false,
   meetingSessionId: null,
@@ -59,10 +71,26 @@ const state: SessionState = {
 
 const authStateReady = new Promise<void>((resolve) => {
   // Restore auth token from chrome.storage on startup before status/auth checks run.
-  chrome.storage.local.get(['sessionToken', 'userId'], (data) => {
+  chrome.storage.local.get(['sessionToken', 'userId', 'activeCoachingSession'], (data) => {
     if (data.sessionToken) {
       setSessionToken(data.sessionToken);
       state.userId = data.userId || null;
+    }
+    const persisted = data.activeCoachingSession as PersistedActiveCoachingSession | undefined;
+    const persistedAgeMs = persisted?.updatedAt ? Date.now() - persisted.updatedAt : Infinity;
+    if (persisted?.meetingSessionId && persistedAgeMs < 8 * 60 * 60 * 1000) {
+      state.meetingSessionId = persisted.meetingSessionId;
+      state.userId = persisted.userId ?? state.userId;
+      state.platform = persisted.platform ?? state.platform;
+      state.meetingTabId = persisted.meetingTabId ?? null;
+      state.status = persisted.status === 'muted' && persisted.promptsMutedByUser ? 'muted' : persisted.coachingPausedByUser ? 'ready' : 'active';
+      state.captureMode = persisted.captureMode === 'user_voice_only' ? 'user_voice_only' : 'full_meeting';
+      state.promptsMutedByUser = persisted.promptsMutedByUser === true;
+      state.coachingPausedByUser = persisted.coachingPausedByUser === true;
+      state.meetingDetected = true;
+      if (!state.coachingPausedByUser && !state.promptsMutedByUser) {
+        startSessionIntervals();
+      }
     }
     resolve();
   });
@@ -538,6 +566,7 @@ function handleStartAudioCapture(meetingSessionId: string, captureMode: CaptureM
 
 /** Broadcast session status to all extension tabs */
 function broadcastStatus(): void {
+  persistActiveCoachingSession();
   chrome.runtime.sendMessage({
     type: 'STATUS_UPDATE',
     status: state.status,
@@ -547,6 +576,26 @@ function broadcastStatus(): void {
     captureMode: state.captureMode,
     promptsMutedByUser: state.promptsMutedByUser,
   }).catch(() => {}); // Ignore if no listeners
+}
+
+function persistActiveCoachingSession(): void {
+  if (!state.meetingSessionId) {
+    chrome.storage.local.remove('activeCoachingSession');
+    return;
+  }
+
+  const snapshot: PersistedActiveCoachingSession = {
+    meetingSessionId: state.meetingSessionId,
+    userId: state.userId,
+    platform: state.platform,
+    meetingTabId: state.meetingTabId,
+    status: state.status,
+    captureMode: state.captureMode,
+    promptsMutedByUser: state.promptsMutedByUser,
+    coachingPausedByUser: state.coachingPausedByUser,
+    updatedAt: Date.now(),
+  };
+  chrome.storage.local.set({ activeCoachingSession: snapshot });
 }
 
 /** Broadcast a prompt to content scripts on supported meeting tabs */

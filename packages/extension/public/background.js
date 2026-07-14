@@ -119,10 +119,26 @@ var state = {
   coachingPausedByUser: false
 };
 var authStateReady = new Promise((resolve) => {
-  chrome.storage.local.get(["sessionToken", "userId"], (data) => {
+  chrome.storage.local.get(["sessionToken", "userId", "activeCoachingSession"], (data) => {
     if (data.sessionToken) {
       setSessionToken(data.sessionToken);
       state.userId = data.userId || null;
+    }
+    const persisted = data.activeCoachingSession;
+    const persistedAgeMs = persisted?.updatedAt ? Date.now() - persisted.updatedAt : Infinity;
+    if (persisted?.meetingSessionId && persistedAgeMs < 8 * 60 * 60 * 1e3) {
+      state.meetingSessionId = persisted.meetingSessionId;
+      state.userId = persisted.userId ?? state.userId;
+      state.platform = persisted.platform ?? state.platform;
+      state.meetingTabId = persisted.meetingTabId ?? null;
+      state.status = persisted.status === "muted" && persisted.promptsMutedByUser ? "muted" : persisted.coachingPausedByUser ? "ready" : "active";
+      state.captureMode = persisted.captureMode === "user_voice_only" ? "user_voice_only" : "full_meeting";
+      state.promptsMutedByUser = persisted.promptsMutedByUser === true;
+      state.coachingPausedByUser = persisted.coachingPausedByUser === true;
+      state.meetingDetected = true;
+      if (!state.coachingPausedByUser && !state.promptsMutedByUser) {
+        startSessionIntervals();
+      }
     }
     resolve();
   });
@@ -515,6 +531,7 @@ function handleStartAudioCapture(meetingSessionId, captureMode = state.captureMo
   });
 }
 function broadcastStatus() {
+  persistActiveCoachingSession();
   chrome.runtime.sendMessage({
     type: "STATUS_UPDATE",
     status: state.status,
@@ -525,6 +542,24 @@ function broadcastStatus() {
     promptsMutedByUser: state.promptsMutedByUser
   }).catch(() => {
   });
+}
+function persistActiveCoachingSession() {
+  if (!state.meetingSessionId) {
+    chrome.storage.local.remove("activeCoachingSession");
+    return;
+  }
+  const snapshot = {
+    meetingSessionId: state.meetingSessionId,
+    userId: state.userId,
+    platform: state.platform,
+    meetingTabId: state.meetingTabId,
+    status: state.status,
+    captureMode: state.captureMode,
+    promptsMutedByUser: state.promptsMutedByUser,
+    coachingPausedByUser: state.coachingPausedByUser,
+    updatedAt: Date.now()
+  };
+  chrome.storage.local.set({ activeCoachingSession: snapshot });
 }
 function broadcastPrompt(prompt) {
   void sendMessageToMeetingTabs({
