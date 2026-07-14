@@ -13,6 +13,7 @@ import { TranscriptAttributionTracker } from '../utils/transcript-attribution';
 import type { Platform, PromptEvent, TranscriptSource } from '@gleameet/shared';
 
 type CaptureMode = 'full_meeting' | 'user_voice_only';
+type StatusReason = 'meeting-ended' | 'tracked-tab-removed' | 'tracked-tab-left-meeting-url' | string;
 
 /** Session context maintained by the content script */
 interface ContentState {
@@ -283,6 +284,25 @@ function shouldRediscoverMeetingFromUrl(): boolean {
   return isLikelyMeetingUrl() && getPlatform() === 'zoom';
 }
 
+function isExplicitTeardownReason(reason: StatusReason | null | undefined): boolean {
+  return reason === 'meeting-ended' ||
+    reason === 'tracked-tab-removed' ||
+    reason === 'tracked-tab-left-meeting-url';
+}
+
+function shouldIgnoreStaleStatusDowngrade(message: any): boolean {
+  const statusReason = message.statusReason as StatusReason | null | undefined;
+  if (isExplicitTeardownReason(statusReason)) return false;
+
+  const incomingStatus = message.status as ContentState['status'] | undefined;
+  const clearsSession = message.meetingSessionId === null;
+  const downgradesStatus = incomingStatus === 'off' || incomingStatus === 'ready' || incomingStatus === 'error';
+  if (!downgradesStatus && !clearsSession) return false;
+
+  const hasLiveSession = !!state.meetingSessionId || !!state.signalCaptureSessionId;
+  const stillLooksInMeeting = detectMeeting() || shouldTrustLikelyMeetingUrl() || shouldRediscoverMeetingFromUrl();
+  return hasLiveSession && stillLooksInMeeting;
+}
 
 function hasVisibleMeetingEndSignal(): boolean {
   const platform = getPlatform();
@@ -1038,17 +1058,30 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   switch (message.type) {
     case 'STATUS_UPDATE': {
       const previousStatus = state.status;
+      if (shouldIgnoreStaleStatusDowngrade(message)) {
+        state.meetingDetected = true;
+        state.status = state.promptsMutedByUser ? 'muted' : 'active';
+        state.platform = state.platform ?? message.platform ?? getPlatform();
+        updateStatusIndicator();
+        sendCoachingActiveHeartbeat();
+        break;
+      }
+
+      const explicitTeardown = isExplicitTeardownReason(message.statusReason);
       const incomingMuted = message.status === 'muted' && message.promptsMutedByUser === true;
       state.status = incomingMuted ? 'muted' : (message.status === 'muted' ? 'active' : message.status);
       state.promptsMutedByUser = incomingMuted;
       state.meetingDetected = message.meetingDetected ?? state.meetingDetected;
-      state.meetingSessionId = message.meetingSessionId;
+      if (message.meetingSessionId || explicitTeardown) {
+        state.meetingSessionId = message.meetingSessionId ?? null;
+      }
       state.platform = message.platform ?? state.platform ?? getPlatform();
       state.captureMode = message.captureMode === 'user_voice_only' ? 'user_voice_only' : state.captureMode;
       updateStatusIndicator();
       if (
         (previousStatus === 'active' || previousStatus === 'muted') &&
         (state.status === 'ready' || state.status === 'off' || state.status === 'error')
+        && explicitTeardown
       ) {
         stopSignalCapture();
       }

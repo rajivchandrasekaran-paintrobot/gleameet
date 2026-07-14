@@ -329,6 +329,20 @@
   function shouldRediscoverMeetingFromUrl() {
     return isLikelyMeetingUrl() && getPlatform() === "zoom";
   }
+  function isExplicitTeardownReason(reason) {
+    return reason === "meeting-ended" || reason === "tracked-tab-removed" || reason === "tracked-tab-left-meeting-url";
+  }
+  function shouldIgnoreStaleStatusDowngrade(message) {
+    const statusReason = message.statusReason;
+    if (isExplicitTeardownReason(statusReason)) return false;
+    const incomingStatus = message.status;
+    const clearsSession = message.meetingSessionId === null;
+    const downgradesStatus = incomingStatus === "off" || incomingStatus === "ready" || incomingStatus === "error";
+    if (!downgradesStatus && !clearsSession) return false;
+    const hasLiveSession = !!state.meetingSessionId || !!state.signalCaptureSessionId;
+    const stillLooksInMeeting = detectMeeting() || shouldTrustLikelyMeetingUrl() || shouldRediscoverMeetingFromUrl();
+    return hasLiveSession && stillLooksInMeeting;
+  }
   function hasVisibleMeetingEndSignal() {
     const platform = getPlatform();
     const bodyText = document.body.textContent || "";
@@ -896,15 +910,26 @@
     switch (message.type) {
       case "STATUS_UPDATE": {
         const previousStatus = state.status;
+        if (shouldIgnoreStaleStatusDowngrade(message)) {
+          state.meetingDetected = true;
+          state.status = state.promptsMutedByUser ? "muted" : "active";
+          state.platform = state.platform ?? message.platform ?? getPlatform();
+          updateStatusIndicator();
+          sendCoachingActiveHeartbeat();
+          break;
+        }
+        const explicitTeardown = isExplicitTeardownReason(message.statusReason);
         const incomingMuted = message.status === "muted" && message.promptsMutedByUser === true;
         state.status = incomingMuted ? "muted" : message.status === "muted" ? "active" : message.status;
         state.promptsMutedByUser = incomingMuted;
         state.meetingDetected = message.meetingDetected ?? state.meetingDetected;
-        state.meetingSessionId = message.meetingSessionId;
+        if (message.meetingSessionId || explicitTeardown) {
+          state.meetingSessionId = message.meetingSessionId ?? null;
+        }
         state.platform = message.platform ?? state.platform ?? getPlatform();
         state.captureMode = message.captureMode === "user_voice_only" ? "user_voice_only" : state.captureMode;
         updateStatusIndicator();
-        if ((previousStatus === "active" || previousStatus === "muted") && (state.status === "ready" || state.status === "off" || state.status === "error")) {
+        if ((previousStatus === "active" || previousStatus === "muted") && (state.status === "ready" || state.status === "off" || state.status === "error") && explicitTeardown) {
           stopSignalCapture();
         }
         break;
