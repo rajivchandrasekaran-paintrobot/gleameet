@@ -38,7 +38,7 @@ export interface TranscriptAttribution {
   candidate_speaker: 'user' | 'other';
   final_speaker: 'user' | 'other';
   passes_user_attribution: boolean;
-  reason?: 'self_declared' | 'non_user_context' | 'overlap_with_recent_non_user_context';
+  reason?: 'self_declared' | 'trusted_mic_capture' | 'non_user_context' | 'overlap_with_recent_non_user_context';
   overlap_score?: number;
   matched_source?: TranscriptSource;
 }

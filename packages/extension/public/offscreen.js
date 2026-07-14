@@ -3,12 +3,18 @@
   // src/offscreen.ts
   var micRecorder = null;
   var micInterval = null;
+  var micSessionId = null;
   var tabRecorder = null;
   var tabInterval = null;
   var tabAudioCtx = null;
+  var tabSessionId = null;
   chrome.runtime.onMessage.addListener(async (message) => {
     if (message.type === "START_MIC_CAPTURE") {
       const { meetingSessionId, sessionToken, apiBase } = message;
+      if (micRecorder && micSessionId === meetingSessionId) {
+        return;
+      }
+      stopMicCapture();
       navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: false,
@@ -20,6 +26,7 @@
         const { recorder, interval } = startRecording(stream, "mic", meetingSessionId, sessionToken, apiBase);
         micRecorder = recorder;
         micInterval = interval;
+        micSessionId = meetingSessionId;
         console.log("[GleaMeet Offscreen] Mic capture started");
       }).catch((err) => {
         console.warn("[GleaMeet Offscreen] Mic capture failed:", err.message);
@@ -27,6 +34,10 @@
     }
     if (message.type === "START_TAB_CAPTURE") {
       const { meetingSessionId, sessionToken, apiBase, streamId } = message;
+      if (tabRecorder && tabSessionId === meetingSessionId) {
+        return;
+      }
+      stopTabCapture();
       navigator.mediaDevices.getUserMedia({
         audio: {
           mandatory: {
@@ -45,51 +56,60 @@
         const { recorder, interval } = startRecording(dest.stream, "tab", meetingSessionId, sessionToken, apiBase);
         tabRecorder = recorder;
         tabInterval = interval;
+        tabSessionId = meetingSessionId;
         console.log("[GleaMeet Offscreen] Tab audio split: speakers + recorder both active");
       }).catch((err) => {
         console.warn("[GleaMeet Offscreen] Tab capture failed:", err.message);
       });
     }
     if (message.type === "STOP_MIC_CAPTURE") {
-      if (micInterval) {
-        clearInterval(micInterval);
-        micInterval = null;
-      }
-      if (micRecorder) {
-        if (micRecorder.state === "recording") {
-          try {
-            micRecorder.stop();
-          } catch (_) {
-          }
-        }
-        micRecorder.stream.getTracks().forEach((t) => t.stop());
-        micRecorder = null;
-      }
+      stopMicCapture();
       console.log("[GleaMeet Offscreen] Mic capture stopped");
     }
     if (message.type === "STOP_TAB_CAPTURE") {
-      if (tabInterval) {
-        clearInterval(tabInterval);
-        tabInterval = null;
-      }
-      if (tabRecorder) {
-        if (tabRecorder.state === "recording") {
-          try {
-            tabRecorder.stop();
-          } catch (_) {
-          }
-        }
-        tabRecorder.stream.getTracks().forEach((t) => t.stop());
-        tabRecorder = null;
-      }
-      if (tabAudioCtx) {
-        tabAudioCtx.close().catch(() => {
-        });
-        tabAudioCtx = null;
-      }
+      stopTabCapture();
       console.log("[GleaMeet Offscreen] Tab capture stopped");
     }
   });
+  function stopMicCapture() {
+    if (micInterval) {
+      clearInterval(micInterval);
+      micInterval = null;
+    }
+    if (micRecorder) {
+      if (micRecorder.state === "recording") {
+        try {
+          micRecorder.stop();
+        } catch (_) {
+        }
+      }
+      micRecorder.stream.getTracks().forEach((t) => t.stop());
+      micRecorder = null;
+    }
+    micSessionId = null;
+  }
+  function stopTabCapture() {
+    if (tabInterval) {
+      clearInterval(tabInterval);
+      tabInterval = null;
+    }
+    if (tabRecorder) {
+      if (tabRecorder.state === "recording") {
+        try {
+          tabRecorder.stop();
+        } catch (_) {
+        }
+      }
+      tabRecorder.stream.getTracks().forEach((t) => t.stop());
+      tabRecorder = null;
+    }
+    if (tabAudioCtx) {
+      tabAudioCtx.close().catch(() => {
+      });
+      tabAudioCtx = null;
+    }
+    tabSessionId = null;
+  }
   function startRecording(stream, streamType, meetingSessionId, sessionToken, apiBase) {
     const recorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
     let chunks = [];

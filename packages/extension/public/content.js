@@ -191,7 +191,8 @@
     diagnosticInterval: null,
     selfNames: /* @__PURE__ */ new Set(),
     captureMode: "full_meeting",
-    promptsMutedByUser: false
+    promptsMutedByUser: false,
+    signalCaptureSessionId: null
   };
   var CAPTION_SELECTORS = [
     // 2025/2026 Meet caption area — the bottom overlay with live text
@@ -402,6 +403,7 @@
   }
   function startSignalCapture() {
     if (!state.meetingSessionId || !state.userId) return;
+    if (state.signalCaptureSessionId === state.meetingSessionId) return;
     const platform = state.platform ?? getPlatform();
     if (!platform) return;
     const capabilities = getPlatformCapabilities(platform);
@@ -421,6 +423,7 @@
       captureMode: state.captureMode
     }).catch(() => {
     });
+    state.signalCaptureSessionId = state.meetingSessionId;
     emitEvent("session_state_changed", {
       previous_state: "ready",
       new_state: "active",
@@ -433,7 +436,9 @@
     }, 1e4);
   }
   function stopSignalCapture() {
-    chrome.runtime.sendMessage({ type: "STOP_AUDIO_CAPTURE" }).catch(() => {
+    const stoppedSessionId = state.signalCaptureSessionId;
+    state.signalCaptureSessionId = null;
+    chrome.runtime.sendMessage({ type: "STOP_AUDIO_CAPTURE", meetingSessionId: stoppedSessionId }).catch(() => {
     });
     if (state.speechObserver) {
       state.speechObserver.disconnect();
@@ -889,7 +894,9 @@
         }
         break;
       case "COACHING_STARTED":
-        stopSignalCapture();
+        if (state.signalCaptureSessionId && state.signalCaptureSessionId !== message.meetingSessionId) {
+          stopSignalCapture();
+        }
         state.meetingSessionId = message.meetingSessionId;
         state.userId = message.userId;
         state.platform = message.platform ?? getPlatform();

@@ -33,6 +33,7 @@ interface ContentState {
   selfNames: Set<string>;
   captureMode: CaptureMode;
   promptsMutedByUser: boolean;
+  signalCaptureSessionId: string | null;
 }
 
 const state: ContentState = {
@@ -53,6 +54,7 @@ const state: ContentState = {
   selfNames: new Set<string>(),
   captureMode: 'full_meeting',
   promptsMutedByUser: false,
+  signalCaptureSessionId: null,
 };
 
 // Caption selectors — ordered by likelihood, all tried on every DOM mutation
@@ -386,6 +388,7 @@ function onMeetingEnded(): void {
 /** Start capturing meeting signals */
 function startSignalCapture(): void {
   if (!state.meetingSessionId || !state.userId) return;
+  if (state.signalCaptureSessionId === state.meetingSessionId) return;
 
   const platform = state.platform ?? getPlatform();
   if (!platform) return;
@@ -408,6 +411,7 @@ function startSignalCapture(): void {
     meetingSessionId: state.meetingSessionId,
     captureMode: state.captureMode,
   }).catch(() => {});
+  state.signalCaptureSessionId = state.meetingSessionId;
 
   // Emit session state change event
   emitEvent('session_state_changed', {
@@ -428,7 +432,9 @@ function startSignalCapture(): void {
 }
 
 function stopSignalCapture(): void {
-  chrome.runtime.sendMessage({ type: 'STOP_AUDIO_CAPTURE' }).catch(() => {});
+  const stoppedSessionId = state.signalCaptureSessionId;
+  state.signalCaptureSessionId = null;
+  chrome.runtime.sendMessage({ type: 'STOP_AUDIO_CAPTURE', meetingSessionId: stoppedSessionId }).catch(() => {});
 
   if (state.speechObserver) {
     state.speechObserver.disconnect();
@@ -613,7 +619,8 @@ function observeCaptions(): void {
 /** Check if a DOM change indicates speech activity */
 function checkSpeechState(element: HTMLElement): void {
   refreshSelfIdentityHints();
-  const classes = (typeof element.className === 'string' ? element.className : element.className?.baseVal) || '';
+  const rawClassName = element.className as string | SVGAnimatedString | undefined;
+  const classes = typeof rawClassName === 'string' ? rawClassName : rawClassName?.baseVal || '';
   const now = Date.now();
 
   // Throttle speech events
@@ -1028,7 +1035,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       break;
 
     case 'COACHING_STARTED':
-      stopSignalCapture();
+      if (state.signalCaptureSessionId && state.signalCaptureSessionId !== message.meetingSessionId) {
+        stopSignalCapture();
+      }
       state.meetingSessionId = message.meetingSessionId;
       state.userId = message.userId;
       state.platform = message.platform ?? getPlatform();
