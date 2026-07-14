@@ -519,6 +519,7 @@ async function getPreferredMeetingContext() {
   ];
   for (const tab of orderedTabs) {
     if (!tab.id) continue;
+    const likelyMeetingUrl = isLikelyMeetingUrl(tab.url || "");
     const response = await ensureMeetingTabReady(tab);
     if (response?.meetingDetected) {
       return {
@@ -527,7 +528,7 @@ async function getPreferredMeetingContext() {
         status: response.status
       };
     }
-    if (!response && isLikelyMeetingUrl(tab.url || "")) {
+    if (likelyMeetingUrl && (!response || tab.active)) {
       return {
         meetingDetected: true,
         platform: detectPlatformFromUrl(tab.url || ""),

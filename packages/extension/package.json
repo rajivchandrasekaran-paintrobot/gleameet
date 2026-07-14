@@ -1,6 +1,6 @@
 {
   "name": "@gleameet/extension",
-  "version": "1.0.52",
+  "version": "1.0.53",
   "private": true,
   "dependencies": {
     "@gleameet/shared": "*",

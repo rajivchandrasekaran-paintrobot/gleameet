@@ -147,10 +147,20 @@ function detectMeeting(): boolean {
   // Google Meet
   if (platform === 'google_meet' && /meet\.google\.com\/[a-z]+-[a-z]+-[a-z]+/i.test(url)) {
     const hasVideo = !!document.querySelector('video');
-    const hasLeaveBtn = !!document.querySelector('[data-is-muted]') ||
-                        !!document.querySelector('[aria-label*="Leave"]') ||
-                        !!document.querySelector('[aria-label*="leave"]');
-    return hasVideo || hasLeaveBtn;
+    const hasCallControls = !!document.querySelector('[data-is-muted]') ||
+                            !!document.querySelector('[aria-label*="Leave"]') ||
+                            !!document.querySelector('[aria-label*="leave"]') ||
+                            !!document.querySelector('[aria-label*="microphone" i]') ||
+                            !!document.querySelector('[aria-label*="camera" i]') ||
+                            !!document.querySelector('[aria-label*="captions" i]') ||
+                            !!document.querySelector('[aria-label*="raise hand" i]') ||
+                            !!document.querySelector('[data-tooltip*="Leave" i]') ||
+                            !!document.querySelector('[data-tooltip*="microphone" i]') ||
+                            !!document.querySelector('[data-tooltip*="camera" i]');
+    const hasParticipantTiles = !!document.querySelector('[data-participant-id]') ||
+                                !!document.querySelector('[data-self-name]') ||
+                                !!document.querySelector('[data-is-self="true"]');
+    return hasVideo || hasCallControls || hasParticipantTiles;
   }
 
   // Microsoft Teams web
