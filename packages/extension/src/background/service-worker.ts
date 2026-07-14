@@ -927,16 +927,22 @@ function isLikelyMeetingUrl(url: string): boolean {
 }
 
 async function queryMeetingTabs(): Promise<chrome.tabs.Tab[]> {
-  const [tabs, activeTab] = await Promise.all([
+  const [tabs, activeTab, allTabs] = await Promise.all([
     new Promise<chrome.tabs.Tab[]>((resolve) => {
       chrome.tabs.query({ url: [...MEETING_TAB_URL_PATTERNS] }, resolve);
     }),
     queryActiveTab(),
+    queryAllTabs(),
   ]);
 
   const meetingTabs = [...tabs];
   if (activeTab?.id && isLikelyMeetingUrl(activeTab.url || '') && !meetingTabs.some(tab => tab.id === activeTab.id)) {
     meetingTabs.unshift(activeTab);
+  }
+  for (const tab of allTabs) {
+    if (tab.id && isLikelyMeetingUrl(tab.url || '') && !meetingTabs.some(existing => existing.id === tab.id)) {
+      meetingTabs.push(tab);
+    }
   }
 
   if (!state.meetingTabId || meetingTabs.some(tab => tab.id === state.meetingTabId)) {
@@ -960,6 +966,14 @@ async function queryActiveTab(): Promise<chrome.tabs.Tab | null> {
   return new Promise((resolve) => {
     chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {
       resolve(tabs[0] ?? null);
+    });
+  });
+}
+
+async function queryAllTabs(): Promise<chrome.tabs.Tab[]> {
+  return new Promise((resolve) => {
+    chrome.tabs.query({}, (tabs) => {
+      resolve(tabs ?? []);
     });
   });
 }
@@ -1047,12 +1061,13 @@ async function ensureMeetingTabReady(tab: chrome.tabs.Tab): Promise<TabMeetingCo
 
 async function resolveActiveMeetingPlatform(platformHint?: Platform | null): Promise<Platform | null> {
   if (platformHint) return platformHint;
-  if (state.platform) return state.platform;
+  const context = await getPreferredMeetingContext();
+  if (context?.meetingDetected) {
+    state.meetingDetected = true;
+    state.platform = context.platform ?? state.platform;
+    state.meetingTabId = context.tabId ?? state.meetingTabId;
+    return state.platform;
+  }
 
-  const tabs = await new Promise<chrome.tabs.Tab[]>((resolve) => {
-    chrome.tabs.query({ url: [...MEETING_TAB_URL_PATTERNS] }, resolve);
-  });
-
-  const preferredTab = tabs.find(tab => tab.active) ?? tabs[0];
-  return preferredTab?.url ? detectPlatformFromUrl(preferredTab.url) : null;
+  return state.platform;
 }

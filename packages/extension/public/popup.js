@@ -24726,7 +24726,7 @@
     });
   }
   async function collectPopupMeetingTabs() {
-    const [meetingTabs, activeTab] = await Promise.all([
+    const [meetingTabs, activeTab, allTabs] = await Promise.all([
       new Promise((resolve) => {
         chrome.tabs.query({ url: [...MEETING_TAB_URL_PATTERNS] }, resolve);
       }),
@@ -24734,11 +24734,21 @@
         chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs2) => {
           resolve(tabs2[0] ?? null);
         });
+      }),
+      new Promise((resolve) => {
+        chrome.tabs.query({}, (tabs2) => {
+          resolve(tabs2 ?? []);
+        });
       })
     ]);
     const tabs = [...meetingTabs];
     if (activeTab?.id && isLikelyMeetingUrl(activeTab.url || "") && !tabs.some((tab) => tab.id === activeTab.id)) {
       tabs.unshift(activeTab);
+    }
+    for (const tab of allTabs) {
+      if (tab.id && isLikelyMeetingUrl(tab.url || "") && !tabs.some((existing) => existing.id === tab.id)) {
+        tabs.push(tab);
+      }
     }
     return tabs;
   }
