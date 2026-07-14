@@ -33,9 +33,7 @@ let micHot = false;      // fed by the level meter
 let progressTimer = null;
 let pollTimer = null;
 let lastSeenSeq = 0;
-let awaitingAnalysis = false;  // waiting for this chunk's analysis
-let analysisDeadline = 0;
-let autoRunning = false; // true once page has loaded and mic access granted
+let relayWarned = false; // log the relay-off notice only once
 
 function renderProgress() {
   if (!chunkStartedAt) return;
@@ -74,23 +72,20 @@ function showPrompt(p) {
   swapTimer = setTimeout(apply, 700);
 }
 
-function stopFeed(finalText) {
-  clearInterval(pollTimer);
-  pollTimer = null;
-  awaitingAnalysis = false;
-  progressEl.textContent = finalText || 'idle';
-}
-
+// Render whatever the relay has produced, whenever it arrives. The recorder
+// loop never stops, so there is deliberately NO timeout/restart here — a slow
+// Whisper turnaround just means the prompt lands a poll or two later.
+// (An earlier watchdog re-sent /event start on timeout, which wiped the
+// server's pending results before the UI ever saw them.)
 async function pollAnalysis() {
   try {
     const res = await fetch(`/analysis?since=${lastSeenSeq}`);
     if (!res.ok) return;
     const data = await res.json();
     if (!data.relay) {
-      if (awaitingAnalysis) {
+      if (!relayWarned) {
+        relayWarned = true;
         log('relay', 'off — no backend analysis (set RENDER_API_BASE)');
-        stopFeed('relay off');
-        if (autoRunning) setTimeout(() => startProbe(), 1000);
       }
       return;
     }
@@ -109,19 +104,12 @@ async function pollAnalysis() {
       } else {
         log(`chunk ${r.seq}`, `transcribed, no prompt: "${r.text}"`);
       }
-      if (r.seq >= chunkSeq) awaitingAnalysis = false;
     }
-    // Auto-restart after chunk analysis arrives
-    if (!awaitingAnalysis && autoRunning && !recorder) {
-      stopFeed('');
-      setTimeout(() => startProbe(), 500);
-    }
-    if (awaitingAnalysis && Date.now() > analysisDeadline) {
-      log('analysis', 'timed out waiting for analysis');
-      stopFeed('idle');
-      if (autoRunning) setTimeout(() => startProbe(), 1000);
-    }
-  } catch { /* local server briefly unreachable — keep polling */ }
+  } catch (err) {
+    // Local server briefly unreachable — keep polling. console only so the
+    // ⋯ log isn't spammed once a second.
+    console.debug('poll', err);
+  }
 }
 
 // --- 1. Initialise the Zoom Apps SDK
@@ -204,7 +192,6 @@ async function startProbe() {
     let pending = [];
     if (chunkSeq === 0) chunkSeq = 1;
     chunkStartedAt = Date.now();
-    awaitingAnalysis = false;
     recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
     recorder.ondataavailable = (e) => {
       if (e.data && e.data.size > 0) pending.push(e.data);
@@ -228,8 +215,6 @@ async function startProbe() {
         body: blob,
       }).catch((err) => log('chunk post failed', err.message));
       log('chunk shipped, bytes', blob.size);
-      awaitingAnalysis = true;
-      analysisDeadline = Date.now() + 15000;
     };
     recorder.onerror = (e) => log('MediaRecorder error', e.error?.message || String(e));
     recorder.start();
@@ -247,27 +232,9 @@ async function startProbe() {
   }
 }
 
-function stopProbe() {
-  autoRunning = false;
-  cancelAnimationFrame(rafId);
-  clearInterval(restartTimer);
-  clearInterval(progressTimer);
-  progressTimer = null;
-  clearInterval(pollTimer);
-  pollTimer = null;
-  micHot = false;
-  chunkStartedAt = 0;
-  audioCtx?.close();
-  recorder?.stop();
-  stream?.getTracks().forEach((t) => t.stop());
-  log('stopped', `total chunks: ${totalChunks}, total bytes: ${totalBytes}`);
-  setStatus('idle');
-}
-
 window.addEventListener('load', async () => {
   await initZoomSdk();
-  // Auto-start 30-second collection loop
-  autoRunning = true;
+  // Auto-start the 30-second collection loop; it runs until the page closes
   setStatus('recording');
   startProbe();
 });
