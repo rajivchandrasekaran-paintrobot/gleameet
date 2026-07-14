@@ -864,6 +864,14 @@
             state.status = "active";
             updateStatusIndicator();
           }
+          chrome.runtime.sendMessage({
+            type: "COACHING_ACTIVE",
+            meetingSessionId: state.meetingSessionId,
+            userId: state.userId,
+            platform: state.platform ?? getPlatform(),
+            captureMode: state.captureMode
+          }).catch(() => {
+          });
           showPrompt(message.prompt);
         } else if (!detectMeeting() && !shouldTrustLikelyMeetingUrl()) {
           dismissCurrentPrompt();

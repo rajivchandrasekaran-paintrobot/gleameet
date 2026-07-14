@@ -257,6 +257,8 @@ async function handleMessage(message, sender) {
     case "AUDIO_TRANSCRIPT_RESULT":
       broadcastAudioTranscript(message);
       return { ok: true };
+    case "COACHING_ACTIVE":
+      return handleCoachingActive(message, sender);
     default:
       return { error: "Unknown message type" };
   }
@@ -434,6 +436,28 @@ async function handleMeetingEnded() {
     broadcastStatus();
     return { error: err.message };
   }
+}
+async function handleCoachingActive(message, sender) {
+  state.meetingDetected = true;
+  state.meetingTabId = sender?.tab?.id ?? state.meetingTabId;
+  state.platform = message.platform ?? state.platform;
+  state.userId = message.userId ?? state.userId;
+  state.captureMode = message.captureMode === "user_voice_only" ? "user_voice_only" : state.captureMode;
+  if (message.meetingSessionId) {
+    state.meetingSessionId = message.meetingSessionId;
+  }
+  if (state.meetingSessionId && !state.coachingPausedByUser && !state.promptsMutedByUser) {
+    state.status = "active";
+    startSessionIntervals();
+  } else if (state.status === "off") {
+    state.status = "ready";
+  }
+  broadcastStatus();
+  return {
+    status: state.status,
+    meetingDetected: state.meetingDetected,
+    meetingSessionId: state.meetingSessionId
+  };
 }
 async function flushEventBuffer() {
   if (state.eventBuffer.length === 0 || !state.meetingSessionId) return;

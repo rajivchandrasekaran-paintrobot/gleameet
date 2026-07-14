@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { getHistory, getTranscript, getReport, deleteMeeting, setSessionToken } from '../utils/api-client';
-import { getPlatformDisplayName } from '../utils/platform';
+import { detectPlatformFromUrl, getPlatformDisplayName, MEETING_TAB_URL_PATTERNS } from '../utils/platform';
 import type { Platform, PostMeetingReport, TranscriptWithNudgesEntry } from '@gleameet/shared';
 
 type SessionStatus = 'off' | 'ready' | 'active' | 'muted' | 'error';
@@ -15,6 +15,14 @@ interface PopupState {
   authenticated: boolean;
   userId: string | null;
   platform: Platform | null;
+}
+
+interface TabMeetingContext {
+  meetingDetected?: boolean;
+  platform?: Platform | null;
+  status?: SessionStatus;
+  meetingSessionId?: string | null;
+  userId?: string | null;
 }
 
 interface MeetingEntry {
@@ -61,6 +69,80 @@ function formatDate(iso: string): string {
   });
 }
 
+function reconcilePopupState(prev: PopupState, update: Partial<PopupState>): PopupState {
+  const meetingSessionId = update.meetingSessionId !== undefined ? update.meetingSessionId : prev.meetingSessionId;
+  const meetingDetected = update.meetingDetected !== undefined ? update.meetingDetected : prev.meetingDetected;
+  let status = update.status || prev.status;
+
+  if (
+    status === 'off' &&
+    meetingSessionId &&
+    meetingDetected
+  ) {
+    status = 'active';
+  }
+
+  return {
+    ...prev,
+    ...update,
+    status,
+    meetingDetected: !!meetingDetected,
+    meetingSessionId: meetingSessionId || null,
+  };
+}
+
+function queryMeetingTabContext(): Promise<Partial<PopupState> | null> {
+  return new Promise((resolve) => {
+    chrome.tabs.query({ url: [...MEETING_TAB_URL_PATTERNS] }, (tabs) => {
+      const orderedTabs = [
+        ...tabs.filter(tab => tab.active),
+        ...tabs.filter(tab => !tab.active),
+      ];
+
+      const checkNext = (index: number) => {
+        const tab = orderedTabs[index];
+        if (!tab?.id) {
+          resolve(null);
+          return;
+        }
+
+        chrome.tabs.sendMessage(tab.id, { type: 'GET_CONTENT_STATUS' }, (response: TabMeetingContext | undefined) => {
+          if (!chrome.runtime.lastError && response?.meetingDetected) {
+            const status = response.meetingSessionId && response.status === 'off'
+              ? 'active'
+              : response.status;
+            const tabState: Partial<PopupState> = {
+              status,
+              meetingDetected: true,
+              userId: response.userId || null,
+              platform: response.platform ?? detectPlatformFromUrl(tab.url || ''),
+            };
+            if (response.meetingSessionId !== undefined) {
+              tabState.meetingSessionId = response.meetingSessionId || null;
+            }
+            resolve(tabState);
+            return;
+          }
+
+          const platform = detectPlatformFromUrl(tab.url || '');
+          if (tab.url && platform) {
+            resolve({
+              status: 'ready',
+              meetingDetected: true,
+              platform,
+            });
+            return;
+          }
+
+          checkNext(index + 1);
+        });
+      };
+
+      checkNext(0);
+    });
+  });
+}
+
 export const Popup: React.FC = () => {
   const extensionVersion = chrome.runtime.getManifest().version;
   const [state, setState] = useState<PopupState>({
@@ -89,8 +171,7 @@ export const Popup: React.FC = () => {
         if (!response) return;
 
         const isAuthenticated = response.authenticated || false;
-        setState(prev => ({
-          ...prev,
+        setState(prev => reconcilePopupState(prev, {
           status: response.status || 'off',
           meetingDetected: response.meetingDetected ?? false,
           meetingSessionId: response.meetingSessionId || null,
@@ -99,13 +180,17 @@ export const Popup: React.FC = () => {
           platform: response.platform || null,
         }));
 
+        void queryMeetingTabContext().then((tabState) => {
+          if (!tabState) return;
+          setState(prev => reconcilePopupState(prev, tabState));
+        });
+
         if (!isAuthenticated) {
           chrome.identity.getAuthToken({ interactive: false }, (token) => {
             if (!chrome.runtime.lastError && token) {
               chrome.runtime.sendMessage({ type: 'AUTHENTICATE', googleIdToken: token }, (res) => {
                 if (res?.ok) {
-                  setState(prev => ({
-                    ...prev,
+                  setState(prev => reconcilePopupState(prev, {
                     authenticated: true,
                     userId: res.userId || prev.userId,
                     status: res.status || prev.status,
@@ -144,8 +229,7 @@ export const Popup: React.FC = () => {
     // Listen for status updates
     const listener = (message: any) => {
       if (message.type === 'STATUS_UPDATE') {
-        setState(prev => ({
-          ...prev,
+        setState(prev => reconcilePopupState(prev, {
           status: message.status,
           meetingDetected: message.meetingDetected ?? prev.meetingDetected,
           meetingSessionId: message.meetingSessionId,
@@ -176,8 +260,7 @@ export const Popup: React.FC = () => {
             googleIdToken: token,
           }, (response) => {
             if (response?.ok) {
-              setState(prev => ({
-                ...prev,
+              setState(prev => reconcilePopupState(prev, {
                 authenticated: true,
                 userId: response.userId,
                 status: response.status || prev.status,
@@ -265,8 +348,7 @@ export const Popup: React.FC = () => {
 
         chrome.runtime.sendMessage({ type: 'AUTHENTICATE', googleIdToken: token }, (response) => {
           if (response?.ok) {
-            setState(prev => ({
-              ...prev,
+            setState(prev => reconcilePopupState(prev, {
               authenticated: true,
               userId: response.userId || prev.userId,
               status: response.status || prev.status,

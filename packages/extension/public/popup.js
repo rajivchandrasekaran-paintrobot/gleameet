@@ -24576,6 +24576,19 @@
   }
 
   // src/utils/platform.ts
+  var MEETING_TAB_URL_PATTERNS = [
+    "https://meet.google.com/*",
+    "https://teams.microsoft.com/*",
+    "https://teams.live.com/*",
+    "https://zoom.us/wc/*",
+    "https://app.zoom.us/wc/*"
+  ];
+  function detectPlatformFromUrl(url) {
+    if (url.includes("meet.google.com")) return "google_meet";
+    if (url.includes("teams.microsoft.com") || url.includes("teams.live.com")) return "teams";
+    if (url.includes("zoom.us") || url.includes("app.zoom.us")) return "zoom";
+    return null;
+  }
   function getPlatformDisplayName(platform) {
     switch (platform) {
       case "google_meet":
@@ -24615,6 +24628,65 @@
       minute: "2-digit"
     });
   }
+  function reconcilePopupState(prev, update) {
+    const meetingSessionId = update.meetingSessionId !== void 0 ? update.meetingSessionId : prev.meetingSessionId;
+    const meetingDetected = update.meetingDetected !== void 0 ? update.meetingDetected : prev.meetingDetected;
+    let status = update.status || prev.status;
+    if (status === "off" && meetingSessionId && meetingDetected) {
+      status = "active";
+    }
+    return {
+      ...prev,
+      ...update,
+      status,
+      meetingDetected: !!meetingDetected,
+      meetingSessionId: meetingSessionId || null
+    };
+  }
+  function queryMeetingTabContext() {
+    return new Promise((resolve) => {
+      chrome.tabs.query({ url: [...MEETING_TAB_URL_PATTERNS] }, (tabs) => {
+        const orderedTabs = [
+          ...tabs.filter((tab) => tab.active),
+          ...tabs.filter((tab) => !tab.active)
+        ];
+        const checkNext = (index) => {
+          const tab = orderedTabs[index];
+          if (!tab?.id) {
+            resolve(null);
+            return;
+          }
+          chrome.tabs.sendMessage(tab.id, { type: "GET_CONTENT_STATUS" }, (response) => {
+            if (!chrome.runtime.lastError && response?.meetingDetected) {
+              const status = response.meetingSessionId && response.status === "off" ? "active" : response.status;
+              const tabState = {
+                status,
+                meetingDetected: true,
+                userId: response.userId || null,
+                platform: response.platform ?? detectPlatformFromUrl(tab.url || "")
+              };
+              if (response.meetingSessionId !== void 0) {
+                tabState.meetingSessionId = response.meetingSessionId || null;
+              }
+              resolve(tabState);
+              return;
+            }
+            const platform = detectPlatformFromUrl(tab.url || "");
+            if (tab.url && platform) {
+              resolve({
+                status: "ready",
+                meetingDetected: true,
+                platform
+              });
+              return;
+            }
+            checkNext(index + 1);
+          });
+        };
+        checkNext(0);
+      });
+    });
+  }
   var Popup = () => {
     const extensionVersion = chrome.runtime.getManifest().version;
     const [state, setState] = (0, import_react.useState)({
@@ -24640,8 +24712,7 @@
         chrome.runtime.sendMessage({ type: "GET_STATUS" }, (response) => {
           if (!response) return;
           const isAuthenticated = response.authenticated || false;
-          setState((prev) => ({
-            ...prev,
+          setState((prev) => reconcilePopupState(prev, {
             status: response.status || "off",
             meetingDetected: response.meetingDetected ?? false,
             meetingSessionId: response.meetingSessionId || null,
@@ -24649,13 +24720,16 @@
             userId: response.userId || prev.userId,
             platform: response.platform || null
           }));
+          void queryMeetingTabContext().then((tabState) => {
+            if (!tabState) return;
+            setState((prev) => reconcilePopupState(prev, tabState));
+          });
           if (!isAuthenticated) {
             chrome.identity.getAuthToken({ interactive: false }, (token) => {
               if (!chrome.runtime.lastError && token) {
                 chrome.runtime.sendMessage({ type: "AUTHENTICATE", googleIdToken: token }, (res) => {
                   if (res?.ok) {
-                    setState((prev) => ({
-                      ...prev,
+                    setState((prev) => reconcilePopupState(prev, {
                       authenticated: true,
                       userId: res.userId || prev.userId,
                       status: res.status || prev.status,
@@ -24689,8 +24763,7 @@
       statusPoll = setInterval(refreshStatus, 2e3);
       const listener = (message) => {
         if (message.type === "STATUS_UPDATE") {
-          setState((prev) => ({
-            ...prev,
+          setState((prev) => reconcilePopupState(prev, {
             status: message.status,
             meetingDetected: message.meetingDetected ?? prev.meetingDetected,
             meetingSessionId: message.meetingSessionId,
@@ -24719,8 +24792,7 @@
               googleIdToken: token
             }, (response) => {
               if (response?.ok) {
-                setState((prev) => ({
-                  ...prev,
+                setState((prev) => reconcilePopupState(prev, {
                   authenticated: true,
                   userId: response.userId,
                   status: response.status || prev.status,
@@ -24797,8 +24869,7 @@
           }
           chrome.runtime.sendMessage({ type: "AUTHENTICATE", googleIdToken: token }, (response) => {
             if (response?.ok) {
-              setState((prev) => ({
-                ...prev,
+              setState((prev) => reconcilePopupState(prev, {
                 authenticated: true,
                 userId: response.userId || prev.userId,
                 status: response.status || prev.status,
