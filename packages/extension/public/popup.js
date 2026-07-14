@@ -24606,6 +24606,9 @@
 
   // src/popup/Popup.tsx
   var import_jsx_runtime = __toESM(require_jsx_runtime());
+  var MEETING_NEGATIVE_GRACE_MS = 3e4;
+  var lastPositiveMeetingAt = 0;
+  var userRequestedEndAt = 0;
   function formatDuration(seconds) {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
@@ -24632,6 +24635,20 @@
     const meetingSessionId = update.meetingSessionId !== void 0 ? update.meetingSessionId : prev.meetingSessionId;
     const meetingDetected = update.meetingDetected !== void 0 ? update.meetingDetected : prev.meetingDetected;
     let status = update.status || prev.status;
+    const positiveMeetingSignal = !!meetingDetected || !!meetingSessionId || status === "active" || status === "muted" || status === "ready";
+    const negativeMeetingSignal = update.meetingDetected === false || update.meetingSessionId === null || update.status === "off";
+    const recentlyPositive = Date.now() - lastPositiveMeetingAt < MEETING_NEGATIVE_GRACE_MS;
+    const recentlyUserEnded = Date.now() - userRequestedEndAt < 1e4;
+    if (positiveMeetingSignal) {
+      lastPositiveMeetingAt = Date.now();
+    } else if (negativeMeetingSignal && !recentlyUserEnded && recentlyPositive && (prev.meetingDetected || !!prev.meetingSessionId || prev.status === "active" || prev.status === "muted")) {
+      return {
+        ...prev,
+        authenticated: update.authenticated ?? prev.authenticated,
+        userId: update.userId ?? prev.userId,
+        platform: prev.platform ?? update.platform ?? null
+      };
+    }
     if (status === "off" && meetingSessionId && meetingDetected) {
       status = "active";
     }
@@ -24879,6 +24896,15 @@
       chrome.runtime.sendMessage({ type: "STOP_COACHING" });
     };
     const handleEndMeeting = () => {
+      userRequestedEndAt = Date.now();
+      lastPositiveMeetingAt = 0;
+      setState((prev) => ({
+        ...prev,
+        status: "off",
+        meetingDetected: false,
+        meetingSessionId: null,
+        platform: null
+      }));
       chrome.runtime.sendMessage({ type: "END_MEETING" });
     };
     const handleMute = () => {

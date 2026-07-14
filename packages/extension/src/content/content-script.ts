@@ -412,6 +412,7 @@ function startSignalCapture(): void {
     captureMode: state.captureMode,
   }).catch(() => {});
   state.signalCaptureSessionId = state.meetingSessionId;
+  sendCoachingActiveHeartbeat();
 
   // Emit session state change event
   emitEvent('session_state_changed', {
@@ -427,8 +428,20 @@ function startSignalCapture(): void {
       ? CAPTION_SELECTORS.flatMap(sel => Array.from(document.querySelectorAll(sel))).length
       : 0;
     console.log(`[GleaMeet] Diagnostics [${platform}]: events_emitted=${state.eventsEmitted}, speech_active=${state.userSpeaking}, recognition_running=${!!recognition}, capture_mode=${state.captureMode}, caption_elements_found=${captionEls}`);
+    sendCoachingActiveHeartbeat();
   }, 10000);
 
+}
+
+function sendCoachingActiveHeartbeat(): void {
+  if (!state.meetingSessionId || !state.userId) return;
+  chrome.runtime.sendMessage({
+    type: 'COACHING_ACTIVE',
+    meetingSessionId: state.meetingSessionId,
+    userId: state.userId,
+    platform: state.platform ?? getPlatform(),
+    captureMode: state.captureMode,
+  }).catch(() => {});
 }
 
 function stopSignalCapture(): void {

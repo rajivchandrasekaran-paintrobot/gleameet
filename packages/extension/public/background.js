@@ -754,7 +754,7 @@ async function getPreferredMeetingContext() {
         promptsMutedByUser: response.promptsMutedByUser
       };
     }
-    if (likelyMeetingUrl && (!response || tab.active)) {
+    if (likelyMeetingUrl && (!response || tab.active || tab.id === state.meetingTabId || !!state.meetingSessionId)) {
       return {
         meetingDetected: true,
         platform: detectPlatformFromUrl(tab.url || ""),
