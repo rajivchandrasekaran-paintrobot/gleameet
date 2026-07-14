@@ -121,7 +121,7 @@ var state = {
 var meetingTabCleanupTimer = null;
 var meetingCleanupInProgress = null;
 var authStateReady = new Promise((resolve) => {
-  chrome.storage.local.get(["sessionToken", "userId", "activeCoachingSession"], (data) => {
+  chrome.storage.local.get(["sessionToken", "userId", "activeCoachingSession", "lastMeetingContext"], (data) => {
     if (data.sessionToken) {
       setSessionToken(data.sessionToken);
       state.userId = data.userId || null;
@@ -140,6 +140,15 @@ var authStateReady = new Promise((resolve) => {
       state.meetingDetected = true;
       if (!state.coachingPausedByUser && !state.promptsMutedByUser) {
         startSessionIntervals();
+      }
+    } else {
+      const meetingContext = data.lastMeetingContext;
+      const contextAgeMs = meetingContext?.updatedAt ? Date.now() - meetingContext.updatedAt : Infinity;
+      if (meetingContext?.meetingDetected && contextAgeMs < 30 * 60 * 1e3) {
+        state.meetingDetected = true;
+        state.platform = meetingContext.platform;
+        state.meetingTabId = meetingContext.meetingTabId;
+        state.status = "ready";
       }
     }
     resolve();
@@ -226,6 +235,9 @@ async function handleMessage(message, sender) {
       return { buffered: true };
     case "GET_STATUS":
       await refreshMeetingContextFromTabs();
+      if (state.status === "off") {
+        await restoreMeetingContextSnapshot();
+      }
       if (state.meetingSessionId && state.meetingDetected && !state.coachingPausedByUser && !state.promptsMutedByUser && state.status !== "active") {
         state.status = "active";
         state.meetingDetected = true;
@@ -597,6 +609,7 @@ function handleStartAudioCapture(meetingSessionId, captureMode = state.captureMo
 }
 function broadcastStatus(statusReason) {
   persistActiveCoachingSession();
+  persistMeetingContext();
   chrome.runtime.sendMessage({
     type: "STATUS_UPDATE",
     status: state.status,
@@ -627,6 +640,20 @@ function persistActiveCoachingSession() {
   };
   chrome.storage.local.set({ activeCoachingSession: snapshot });
 }
+function persistMeetingContext() {
+  if (!state.meetingDetected || !state.platform || state.status === "off") {
+    chrome.storage.local.remove("lastMeetingContext");
+    return;
+  }
+  const snapshot = {
+    meetingDetected: true,
+    platform: state.platform,
+    meetingTabId: state.meetingTabId,
+    status: "ready",
+    updatedAt: Date.now()
+  };
+  chrome.storage.local.set({ lastMeetingContext: snapshot });
+}
 async function restoreActiveCoachingSessionSnapshot() {
   if (state.meetingSessionId) return;
   const data = await new Promise((resolve) => {
@@ -644,6 +671,22 @@ async function restoreActiveCoachingSessionSnapshot() {
   state.promptsMutedByUser = persisted.promptsMutedByUser === true;
   state.coachingPausedByUser = persisted.coachingPausedByUser === true;
   state.meetingDetected = true;
+}
+async function restoreMeetingContextSnapshot() {
+  if (state.meetingDetected && state.status !== "off") return true;
+  const data = await new Promise((resolve) => {
+    chrome.storage.local.get(["lastMeetingContext"], resolve);
+  });
+  const persisted = data.lastMeetingContext;
+  const persistedAgeMs = persisted?.updatedAt ? Date.now() - persisted.updatedAt : Infinity;
+  if (!persisted?.meetingDetected || persistedAgeMs >= 30 * 60 * 1e3) return false;
+  state.meetingDetected = true;
+  state.platform = persisted.platform ?? state.platform;
+  state.meetingTabId = persisted.meetingTabId ?? state.meetingTabId;
+  if (!state.meetingSessionId) {
+    state.status = "ready";
+  }
+  return true;
 }
 function cancelTrackedMeetingTabCleanup() {
   if (!meetingTabCleanupTimer) return;
@@ -720,7 +763,7 @@ async function cleanupActiveMeetingSession(reason) {
     state.captureMode = "full_meeting";
     state.promptsMutedByUser = false;
     state.coachingPausedByUser = false;
-    chrome.storage.local.remove("activeCoachingSession");
+    chrome.storage.local.remove(["activeCoachingSession", "lastMeetingContext"]);
     broadcastStatus(reason);
     return { status: "off" };
   })();

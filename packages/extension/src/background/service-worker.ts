@@ -54,6 +54,14 @@ interface PersistedActiveCoachingSession {
   updatedAt: number;
 }
 
+interface PersistedMeetingContext {
+  meetingDetected: boolean;
+  platform: Platform | null;
+  meetingTabId: number | null;
+  status: 'ready' | 'off';
+  updatedAt: number;
+}
+
 const state: SessionState = {
   meetingDetected: false,
   meetingSessionId: null,
@@ -74,7 +82,7 @@ let meetingCleanupInProgress: Promise<any> | null = null;
 
 const authStateReady = new Promise<void>((resolve) => {
   // Restore auth token from chrome.storage on startup before status/auth checks run.
-  chrome.storage.local.get(['sessionToken', 'userId', 'activeCoachingSession'], (data) => {
+  chrome.storage.local.get(['sessionToken', 'userId', 'activeCoachingSession', 'lastMeetingContext'], (data) => {
     if (data.sessionToken) {
       setSessionToken(data.sessionToken);
       state.userId = data.userId || null;
@@ -93,6 +101,15 @@ const authStateReady = new Promise<void>((resolve) => {
       state.meetingDetected = true;
       if (!state.coachingPausedByUser && !state.promptsMutedByUser) {
         startSessionIntervals();
+      }
+    } else {
+      const meetingContext = data.lastMeetingContext as PersistedMeetingContext | undefined;
+      const contextAgeMs = meetingContext?.updatedAt ? Date.now() - meetingContext.updatedAt : Infinity;
+      if (meetingContext?.meetingDetected && contextAgeMs < 30 * 60 * 1000) {
+        state.meetingDetected = true;
+        state.platform = meetingContext.platform;
+        state.meetingTabId = meetingContext.meetingTabId;
+        state.status = 'ready';
       }
     }
     resolve();
@@ -205,6 +222,9 @@ async function handleMessage(message: any, sender?: chrome.runtime.MessageSender
 
     case 'GET_STATUS':
       await refreshMeetingContextFromTabs();
+      if (state.status === 'off') {
+        await restoreMeetingContextSnapshot();
+      }
       if (
         state.meetingSessionId &&
         state.meetingDetected &&
@@ -656,6 +676,7 @@ function handleStartAudioCapture(meetingSessionId: string, captureMode: CaptureM
 /** Broadcast session status to all extension tabs */
 function broadcastStatus(statusReason?: string): void {
   persistActiveCoachingSession();
+  persistMeetingContext();
   chrome.runtime.sendMessage({
     type: 'STATUS_UPDATE',
     status: state.status,
@@ -688,6 +709,22 @@ function persistActiveCoachingSession(): void {
   chrome.storage.local.set({ activeCoachingSession: snapshot });
 }
 
+function persistMeetingContext(): void {
+  if (!state.meetingDetected || !state.platform || state.status === 'off') {
+    chrome.storage.local.remove('lastMeetingContext');
+    return;
+  }
+
+  const snapshot: PersistedMeetingContext = {
+    meetingDetected: true,
+    platform: state.platform,
+    meetingTabId: state.meetingTabId,
+    status: 'ready',
+    updatedAt: Date.now(),
+  };
+  chrome.storage.local.set({ lastMeetingContext: snapshot });
+}
+
 async function restoreActiveCoachingSessionSnapshot(): Promise<void> {
   if (state.meetingSessionId) return;
 
@@ -707,6 +744,25 @@ async function restoreActiveCoachingSessionSnapshot(): Promise<void> {
   state.promptsMutedByUser = persisted.promptsMutedByUser === true;
   state.coachingPausedByUser = persisted.coachingPausedByUser === true;
   state.meetingDetected = true;
+}
+
+async function restoreMeetingContextSnapshot(): Promise<boolean> {
+  if (state.meetingDetected && state.status !== 'off') return true;
+
+  const data = await new Promise<{ lastMeetingContext?: PersistedMeetingContext }>((resolve) => {
+    chrome.storage.local.get(['lastMeetingContext'], resolve);
+  });
+  const persisted = data.lastMeetingContext;
+  const persistedAgeMs = persisted?.updatedAt ? Date.now() - persisted.updatedAt : Infinity;
+  if (!persisted?.meetingDetected || persistedAgeMs >= 30 * 60 * 1000) return false;
+
+  state.meetingDetected = true;
+  state.platform = persisted.platform ?? state.platform;
+  state.meetingTabId = persisted.meetingTabId ?? state.meetingTabId;
+  if (!state.meetingSessionId) {
+    state.status = 'ready';
+  }
+  return true;
 }
 
 function cancelTrackedMeetingTabCleanup(): void {
@@ -788,7 +844,7 @@ async function cleanupActiveMeetingSession(reason: string): Promise<any> {
     state.promptsMutedByUser = false;
     state.coachingPausedByUser = false;
 
-    chrome.storage.local.remove('activeCoachingSession');
+    chrome.storage.local.remove(['activeCoachingSession', 'lastMeetingContext']);
     broadcastStatus(reason);
     return { status: 'off' };
   })();
