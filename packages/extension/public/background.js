@@ -705,11 +705,18 @@ function isLikelyMeetingUrl(url) {
   return false;
 }
 async function queryMeetingTabs() {
-  const tabs = await new Promise((resolve) => {
-    chrome.tabs.query({ url: [...MEETING_TAB_URL_PATTERNS] }, resolve);
-  });
-  if (!state.meetingTabId || tabs.some((tab) => tab.id === state.meetingTabId)) {
-    return tabs;
+  const [tabs, activeTab] = await Promise.all([
+    new Promise((resolve) => {
+      chrome.tabs.query({ url: [...MEETING_TAB_URL_PATTERNS] }, resolve);
+    }),
+    queryActiveTab()
+  ]);
+  const meetingTabs = [...tabs];
+  if (activeTab?.id && isLikelyMeetingUrl(activeTab.url || "") && !meetingTabs.some((tab) => tab.id === activeTab.id)) {
+    meetingTabs.unshift(activeTab);
+  }
+  if (!state.meetingTabId || meetingTabs.some((tab) => tab.id === state.meetingTabId)) {
+    return meetingTabs;
   }
   const rememberedTab = await new Promise((resolve) => {
     chrome.tabs.get(state.meetingTabId, (tab) => {
@@ -720,7 +727,14 @@ async function queryMeetingTabs() {
       resolve(tab);
     });
   });
-  return rememberedTab ? [rememberedTab, ...tabs] : tabs;
+  return rememberedTab ? [rememberedTab, ...meetingTabs] : meetingTabs;
+}
+async function queryActiveTab() {
+  return new Promise((resolve) => {
+    chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {
+      resolve(tabs[0] ?? null);
+    });
+  });
 }
 async function sendMessageToMeetingTabs(message) {
   const tabs = await queryMeetingTabs();

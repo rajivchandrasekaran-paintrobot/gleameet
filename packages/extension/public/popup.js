@@ -24645,7 +24645,7 @@
   }
   function queryMeetingTabContext() {
     return new Promise((resolve) => {
-      chrome.tabs.query({ url: [...MEETING_TAB_URL_PATTERNS] }, (tabs) => {
+      collectPopupMeetingTabs().then((tabs) => {
         const orderedTabs = [
           ...tabs.filter((tab) => tab.active),
           ...tabs.filter((tab) => !tab.active)
@@ -24686,6 +24686,23 @@
         checkNext(0);
       });
     });
+  }
+  async function collectPopupMeetingTabs() {
+    const [meetingTabs, activeTab] = await Promise.all([
+      new Promise((resolve) => {
+        chrome.tabs.query({ url: [...MEETING_TAB_URL_PATTERNS] }, resolve);
+      }),
+      new Promise((resolve) => {
+        chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs2) => {
+          resolve(tabs2[0] ?? null);
+        });
+      })
+    ]);
+    const tabs = [...meetingTabs];
+    if (activeTab?.id && detectPlatformFromUrl(activeTab.url || "") && !tabs.some((tab) => tab.id === activeTab.id)) {
+      tabs.unshift(activeTab);
+    }
+    return tabs;
   }
   var Popup = () => {
     const extensionVersion = chrome.runtime.getManifest().version;

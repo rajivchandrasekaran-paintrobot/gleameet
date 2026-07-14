@@ -93,7 +93,7 @@ function reconcilePopupState(prev: PopupState, update: Partial<PopupState>): Pop
 
 function queryMeetingTabContext(): Promise<Partial<PopupState> | null> {
   return new Promise((resolve) => {
-    chrome.tabs.query({ url: [...MEETING_TAB_URL_PATTERNS] }, (tabs) => {
+    collectPopupMeetingTabs().then((tabs) => {
       const orderedTabs = [
         ...tabs.filter(tab => tab.active),
         ...tabs.filter(tab => !tab.active),
@@ -141,6 +141,25 @@ function queryMeetingTabContext(): Promise<Partial<PopupState> | null> {
       checkNext(0);
     });
   });
+}
+
+async function collectPopupMeetingTabs(): Promise<chrome.tabs.Tab[]> {
+  const [meetingTabs, activeTab] = await Promise.all([
+    new Promise<chrome.tabs.Tab[]>((resolve) => {
+      chrome.tabs.query({ url: [...MEETING_TAB_URL_PATTERNS] }, resolve);
+    }),
+    new Promise<chrome.tabs.Tab | null>((resolve) => {
+      chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {
+        resolve(tabs[0] ?? null);
+      });
+    }),
+  ]);
+
+  const tabs = [...meetingTabs];
+  if (activeTab?.id && detectPlatformFromUrl(activeTab.url || '') && !tabs.some(tab => tab.id === activeTab.id)) {
+    tabs.unshift(activeTab);
+  }
+  return tabs;
 }
 
 export const Popup: React.FC = () => {
