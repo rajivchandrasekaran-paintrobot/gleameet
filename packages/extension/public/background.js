@@ -190,7 +190,8 @@ async function handleMessage(message, sender) {
           meetingSessionId: state.meetingSessionId,
           userId: state.userId,
           platform: state.platform,
-          captureMode: state.captureMode
+          captureMode: state.captureMode,
+          forceRestartCapture: true
         });
         return { status: "active", meetingSessionId: state.meetingSessionId, resumed: true };
       }
@@ -372,6 +373,11 @@ async function handlePauseCoaching() {
     }
     state.status = "ready";
     state.coachingPausedByUser = true;
+    await sendMessageToMeetingTabs({
+      type: "COACHING_PAUSED",
+      meetingSessionId: state.meetingSessionId
+    }).catch(() => {
+    });
     broadcastStatus();
     console.log("[GleaMeet] Coaching paused, session preserved:", state.meetingSessionId);
     return { status: "ready" };

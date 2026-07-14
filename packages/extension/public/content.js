@@ -467,11 +467,15 @@
     }).catch(() => {
     });
   }
-  function stopSignalCapture() {
+  function stopSignalCapture(options = {}) {
+    const stopAudio = options.stopAudio ?? true;
+    const shouldDismissPrompt = options.dismissPrompt ?? true;
     const stoppedSessionId = state.signalCaptureSessionId;
     state.signalCaptureSessionId = null;
-    chrome.runtime.sendMessage({ type: "STOP_AUDIO_CAPTURE", meetingSessionId: stoppedSessionId }).catch(() => {
-    });
+    if (stopAudio) {
+      chrome.runtime.sendMessage({ type: "STOP_AUDIO_CAPTURE", meetingSessionId: stoppedSessionId }).catch(() => {
+      });
+    }
     if (state.speechObserver) {
       state.speechObserver.disconnect();
       state.speechObserver = null;
@@ -486,7 +490,9 @@
     }
     state.userSpeaking = false;
     stopMicrophoneDetection();
-    dismissCurrentPrompt();
+    if (shouldDismissPrompt) {
+      dismissCurrentPrompt();
+    }
   }
   function observeSpeechIndicators() {
     if (state.speechObserver) {
@@ -932,7 +938,9 @@
         }
         break;
       case "COACHING_STARTED":
-        if (state.signalCaptureSessionId && state.signalCaptureSessionId !== message.meetingSessionId) {
+        if (message.forceRestartCapture && state.signalCaptureSessionId === message.meetingSessionId) {
+          stopSignalCapture({ stopAudio: false, dismissPrompt: false });
+        } else if (state.signalCaptureSessionId && state.signalCaptureSessionId !== message.meetingSessionId) {
           stopSignalCapture();
         }
         state.meetingSessionId = message.meetingSessionId;
@@ -944,6 +952,13 @@
         state.meetingDetected = true;
         updateStatusIndicator();
         startSignalCapture();
+        break;
+      case "COACHING_PAUSED":
+        if (!message.meetingSessionId || message.meetingSessionId === state.meetingSessionId) {
+          state.status = "ready";
+          updateStatusIndicator();
+          stopSignalCapture();
+        }
         break;
       case "WHISPER_ACTIVE":
         markWhisperActive();

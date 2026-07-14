@@ -471,10 +471,14 @@ function sendCoachingActiveHeartbeat(): void {
   }).catch(() => {});
 }
 
-function stopSignalCapture(): void {
+function stopSignalCapture(options: { stopAudio?: boolean; dismissPrompt?: boolean } = {}): void {
+  const stopAudio = options.stopAudio ?? true;
+  const shouldDismissPrompt = options.dismissPrompt ?? true;
   const stoppedSessionId = state.signalCaptureSessionId;
   state.signalCaptureSessionId = null;
-  chrome.runtime.sendMessage({ type: 'STOP_AUDIO_CAPTURE', meetingSessionId: stoppedSessionId }).catch(() => {});
+  if (stopAudio) {
+    chrome.runtime.sendMessage({ type: 'STOP_AUDIO_CAPTURE', meetingSessionId: stoppedSessionId }).catch(() => {});
+  }
 
   if (state.speechObserver) {
     state.speechObserver.disconnect();
@@ -490,7 +494,9 @@ function stopSignalCapture(): void {
   }
   state.userSpeaking = false;
   stopMicrophoneDetection();
-  dismissCurrentPrompt();
+  if (shouldDismissPrompt) {
+    dismissCurrentPrompt();
+  }
 }
 
 /** Observe Google Meet DOM for speech/participant indicators */
@@ -1082,7 +1088,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       break;
 
     case 'COACHING_STARTED':
-      if (state.signalCaptureSessionId && state.signalCaptureSessionId !== message.meetingSessionId) {
+      if (message.forceRestartCapture && state.signalCaptureSessionId === message.meetingSessionId) {
+        stopSignalCapture({ stopAudio: false, dismissPrompt: false });
+      } else if (state.signalCaptureSessionId && state.signalCaptureSessionId !== message.meetingSessionId) {
         stopSignalCapture();
       }
       state.meetingSessionId = message.meetingSessionId;
@@ -1094,6 +1102,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       state.meetingDetected = true;
       updateStatusIndicator();
       startSignalCapture();
+      break;
+
+    case 'COACHING_PAUSED':
+      if (!message.meetingSessionId || message.meetingSessionId === state.meetingSessionId) {
+        state.status = 'ready';
+        updateStatusIndicator();
+        stopSignalCapture();
+      }
       break;
 
     case 'WHISPER_ACTIVE':
