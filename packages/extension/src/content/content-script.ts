@@ -1054,6 +1054,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         meetingDetected: state.meetingDetected || detectMeeting() || shouldTrustLikelyMeetingUrl(),
         platform: state.platform ?? getPlatform(),
         status: state.status,
+        meetingSessionId: state.meetingSessionId,
+        userId: state.userId,
+        captureMode: state.captureMode,
         promptsMutedByUser: state.promptsMutedByUser,
       });
       return true;

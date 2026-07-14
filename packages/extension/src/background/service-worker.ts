@@ -16,6 +16,7 @@ interface SessionState {
   meetingSessionId: string | null;
   userId: string | null;
   platform: Platform | null;
+  meetingTabId: number | null;
   status: 'off' | 'ready' | 'active' | 'muted' | 'error';
   eventBuffer: RawEvent[];
   pollingInterval: ReturnType<typeof setInterval> | null;
@@ -28,7 +29,11 @@ interface SessionState {
 interface TabMeetingContext {
   meetingDetected: boolean;
   platform: Platform | null;
+  tabId?: number;
   status?: SessionState['status'];
+  meetingSessionId?: string | null;
+  userId?: string | null;
+  captureMode?: CaptureMode;
   promptsMutedByUser?: boolean;
 }
 
@@ -42,6 +47,7 @@ const state: SessionState = {
   meetingSessionId: null,
   userId: null,
   platform: null,
+  meetingTabId: null,
   status: 'off',
   eventBuffer: [],
   pollingInterval: null,
@@ -63,20 +69,21 @@ const authStateReady = new Promise<void>((resolve) => {
 });
 
 /** Listen for messages from content script and popup */
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  handleMessage(message)
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  handleMessage(message, sender)
     .then(sendResponse)
     .catch(err => sendResponse({ error: err.message }));
   return true; // Keep message channel open for async response
 });
 
-async function handleMessage(message: any): Promise<any> {
+async function handleMessage(message: any, sender?: chrome.runtime.MessageSender): Promise<any> {
   await authStateReady;
 
   switch (message.type) {
     case 'MEETING_DETECTED':
       state.meetingDetected = true;
       state.platform = message.platform || state.platform;
+      state.meetingTabId = sender?.tab?.id ?? state.meetingTabId;
       if (state.status === 'off') {
         state.status = 'ready';
       }
@@ -89,6 +96,7 @@ async function handleMessage(message: any): Promise<any> {
     case 'START_COACHING':
       if (state.meetingSessionId) {
         // Resuming existing session — reuse session, just restart intervals
+        await refreshMeetingContextFromTabs();
         state.meetingDetected = true;
         state.status = 'active';
         state.promptsMutedByUser = false;
@@ -136,6 +144,17 @@ async function handleMessage(message: any): Promise<any> {
 
     case 'GET_STATUS':
       await refreshMeetingContextFromTabs();
+      if (
+        state.meetingSessionId &&
+        state.meetingDetected &&
+        !state.coachingPausedByUser &&
+        !state.promptsMutedByUser &&
+        state.status !== 'active'
+      ) {
+        state.status = 'active';
+        startSessionIntervals();
+        broadcastStatus();
+      }
       if (state.status === 'muted' && !state.promptsMutedByUser && state.meetingSessionId) {
         state.status = 'active';
         startSessionIntervals();
@@ -251,8 +270,10 @@ async function handleStartCoaching(message: any): Promise<any> {
     request.consent.scope.capture_other_participants = captureMode !== 'user_voice_only';
 
     const response = await startMeeting(request);
+    const meetingTab = await getPreferredMeetingTabAsync();
     state.meetingSessionId = response.meeting_session_id;
     state.platform = platform;
+    state.meetingTabId = meetingTab?.id ?? state.meetingTabId;
     state.meetingDetected = true;
     state.status = 'active';
     state.eventBuffer = [];
@@ -320,6 +341,7 @@ async function handleStopCoaching(): Promise<any> {
       await sendMessageToMeetingTabs({ type: 'DISMISS_ALL_PROMPTS' });
 
       state.meetingSessionId = null;
+      state.meetingTabId = null;
       state.status = state.meetingDetected ? 'ready' : 'off';
       state.eventBuffer = [];
       state.captureMode = 'full_meeting';
@@ -380,6 +402,7 @@ async function handleMeetingEnded(): Promise<any> {
     if (state.pollingInterval) { clearInterval(state.pollingInterval); state.pollingInterval = null; }
 
     state.meetingSessionId = null;
+    state.meetingTabId = null;
     state.platform = null;
     state.status = 'off';
     state.eventBuffer = [];
@@ -566,10 +589,12 @@ function startSessionIntervals(): void {
 }
 
 function getPreferredMeetingTab(callback: (tab: chrome.tabs.Tab | undefined) => void): void {
-  chrome.tabs.query({ url: [...MEETING_TAB_URL_PATTERNS] }, (tabs) => {
-    const preferredTab = tabs.find(tab => tab.active) ?? tabs[0];
-    callback(preferredTab);
-  });
+  getPreferredMeetingTabAsync().then(callback);
+}
+
+async function getPreferredMeetingTabAsync(): Promise<chrome.tabs.Tab | undefined> {
+  const tabs = await queryMeetingTabs();
+  return tabs.find(tab => tab.id === state.meetingTabId) ?? tabs.find(tab => tab.active) ?? tabs[0];
 }
 
 async function refreshMeetingContextFromTabs(): Promise<void> {
@@ -578,7 +603,16 @@ async function refreshMeetingContextFromTabs(): Promise<void> {
   if (context?.meetingDetected) {
     state.meetingDetected = true;
     state.platform = context.platform ?? state.platform;
-    if (state.meetingSessionId && state.status === 'off') {
+    state.meetingTabId = context.tabId ?? state.meetingTabId;
+    if (context.meetingSessionId && !state.meetingSessionId) {
+      state.meetingSessionId = context.meetingSessionId;
+      state.userId = context.userId ?? state.userId;
+      state.captureMode = context.captureMode === 'user_voice_only' ? 'user_voice_only' : state.captureMode;
+      state.status = context.status === 'muted' && context.promptsMutedByUser ? 'muted' : 'active';
+      state.promptsMutedByUser = context.status === 'muted' && context.promptsMutedByUser === true;
+      state.coachingPausedByUser = false;
+      startSessionIntervals();
+    } else if (state.meetingSessionId && state.status === 'off') {
       state.status = context.status === 'active' || context.status === 'muted' ? context.status : 'ready';
     } else if (!state.meetingSessionId && state.status === 'off') {
       state.status = 'ready';
@@ -612,13 +646,19 @@ async function getPreferredMeetingContext(): Promise<TabMeetingContext | null> {
       return {
         meetingDetected: true,
         platform: response.platform ?? detectPlatformFromUrl(tab.url || ''),
+        tabId: tab.id,
         status: response.status,
+        meetingSessionId: response.meetingSessionId,
+        userId: response.userId,
+        captureMode: response.captureMode,
+        promptsMutedByUser: response.promptsMutedByUser,
       };
     }
     if (likelyMeetingUrl && (!response || tab.active)) {
       return {
         meetingDetected: true,
         platform: detectPlatformFromUrl(tab.url || ''),
+        tabId: tab.id,
         status: 'ready',
       };
     }
@@ -630,6 +670,7 @@ async function getPreferredMeetingContext(): Promise<TabMeetingContext | null> {
   return {
     meetingDetected: isLikelyMeetingUrl(preferredTab.url),
     platform: detectPlatformFromUrl(preferredTab.url),
+    tabId: preferredTab.id,
   };
 }
 
@@ -666,9 +707,25 @@ function isLikelyMeetingUrl(url: string): boolean {
 }
 
 async function queryMeetingTabs(): Promise<chrome.tabs.Tab[]> {
-  return new Promise<chrome.tabs.Tab[]>((resolve) => {
+  const tabs = await new Promise<chrome.tabs.Tab[]>((resolve) => {
     chrome.tabs.query({ url: [...MEETING_TAB_URL_PATTERNS] }, resolve);
   });
+
+  if (!state.meetingTabId || tabs.some(tab => tab.id === state.meetingTabId)) {
+    return tabs;
+  }
+
+  const rememberedTab = await new Promise<chrome.tabs.Tab | null>((resolve) => {
+    chrome.tabs.get(state.meetingTabId as number, (tab) => {
+      if (chrome.runtime.lastError || !tab) {
+        resolve(null);
+        return;
+      }
+      resolve(tab);
+    });
+  });
+
+  return rememberedTab ? [rememberedTab, ...tabs] : tabs;
 }
 
 async function sendMessageToMeetingTabs(message: MeetingTabMessage): Promise<void> {
