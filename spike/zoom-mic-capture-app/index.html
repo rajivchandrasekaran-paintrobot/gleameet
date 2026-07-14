@@ -40,26 +40,120 @@
     }
 
     * { box-sizing: border-box; }
-    html, body { height: 100%; }
-    body {
+    html, body {
+      height: 100%;
+      width: 100%;
       margin: 0;
+      padding: 0;
+    }
+    body {
       background: var(--panel-bg);
       color: var(--text);
       font-family: system-ui, -apple-system, sans-serif;
       font-size: 13px;
+      display: flex;
+      flex-direction: column;
     }
 
-    /* --- Bottom-anchored dock: everything lives here; the space above is
-           intentionally empty so the panel reads as Zoom's own chrome. --- */
-    .prompt-dock {
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
+    /* --- Root panel: splits into two vertical halves, full width/height --- */
+    .panel-root {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      height: 100%;
+      gap: 0;
+    }
+
+    /* --- Top half: coaching laws reference --- */
+    .laws-info {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      border-bottom: 1px solid var(--strip-border);
       padding: 12px;
+    }
+
+    .laws-list-normal { display: block; }
+    .laws-list-compact { display: none; }
+    @media (max-height: 300px) {
+      .laws-list-normal { display: none; }
+      .laws-list-compact { display: block; }
+    }
+
+    .laws-intro {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin: 0 0 12px;
+      line-height: 1.5;
+    }
+
+    .laws-group {
+      margin-bottom: 12px;
+    }
+    .laws-group h3 {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin: 8px 0 6px;
+      font-weight: 600;
+    }
+    .laws-group:first-child h3 { margin-top: 0; }
+
+    .laws-item {
+      font-size: 12px;
+      line-height: 1.4;
+      margin: 6px 0;
+      padding: 6px 8px;
+      border-radius: 6px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+    }
+    .laws-item-title {
+      font-weight: 600;
+      color: var(--text);
+      margin: 0 0 2px;
+    }
+    .laws-item-desc {
+      margin: 0;
+      color: var(--text-muted);
+    }
+
+    .laws-list-compact details {
+      cursor: pointer;
+    }
+    .laws-list-compact summary {
+      list-style: none;
+      font-weight: 600;
+      color: var(--text);
+      padding: 2px 0;
+      user-select: none;
+    }
+    .laws-list-compact summary::-webkit-details-marker { display: none; }
+    .laws-list-compact[open] summary::before { content: '▼ '; }
+    .laws-list-compact summary:not([open])::before { content: '▶ '; }
+    .laws-list-compact .laws-list-content {
+      margin-top: 8px;
+    }
+
+    /* --- Bottom half: prompt dock --- */
+    .prompt-area {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      padding: 0;
+    }
+
+    /* --- Prompt dock: flex container for prompt card + feed + status --- */
+    .prompt-dock {
       display: flex;
       flex-direction: column;
       gap: 8px;
+      padding: 12px;
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
     }
 
     /* --- Prompt card: hidden until a coaching prompt arrives.
@@ -228,39 +322,176 @@
   </style>
 </head>
 <body>
-  <!-- Space above the dock stays empty on purpose: with the background
-       color-matched to Zoom's chrome it reads as part of the panel. -->
+  <div class="panel-root">
+    <!-- TOP HALF: Coaching Laws Reference
+         Source: packages/law-registry/laws/*.json (12 behavioral laws) -->
+    <div class="laws-info">
+      <div class="laws-list-normal">
+        <p class="laws-intro">GleaMeet listens for patterns like these during your meeting.</p>
 
-  <div class="prompt-dock">
-    <div class="prompt-card" id="prompt-card">
-      <p class="prompt-title">Coaching prompt</p>
-      <p class="prompt-text" id="prompt-text"></p>
-    </div>
+        <div class="laws-group">
+          <h3>Persuasion & Influence (Cialdini)</h3>
+          <div class="laws-item">
+            <p class="laws-item-title">Reciprocity</p>
+            <p class="laws-item-desc">Detects persuasion without first acknowledging the other side.</p>
+          </div>
+          <div class="laws-item">
+            <p class="laws-item-title">Commitment &amp; Consistency</p>
+            <p class="laws-item-desc">Detects stalled discussions where smaller commitments could help.</p>
+          </div>
+          <div class="laws-item">
+            <p class="laws-item-title">Social Proof</p>
+            <p class="laws-item-desc">Detects resistance when peer examples could reduce uncertainty.</p>
+          </div>
+          <div class="laws-item">
+            <p class="laws-item-title">Authority</p>
+            <p class="laws-item-desc">Detects recommendations without supporting evidence.</p>
+          </div>
+        </div>
 
-    <div class="capture-feed" id="feed" hidden>
-      <div id="feed-out"></div>
-      <div id="progress">idle</div>
-    </div>
+        <div class="laws-group">
+          <h3>Cognitive Bias (Kahneman)</h3>
+          <div class="laws-item">
+            <p class="laws-item-title">System 1 vs System 2</p>
+            <p class="laws-item-desc">Detects rapid rebuttal without acknowledgment or clarification.</p>
+          </div>
+          <div class="laws-item">
+            <p class="laws-item-title">Loss Aversion</p>
+            <p class="laws-item-desc">Detects overweighting of downside without balancing upsides.</p>
+          </div>
+          <div class="laws-item">
+            <p class="laws-item-title">Anchoring</p>
+            <p class="laws-item-desc">Detects locking discussion with concrete numbers too early.</p>
+          </div>
+          <div class="laws-item">
+            <p class="laws-item-title">Overconfidence</p>
+            <p class="laws-item-desc">Detects high certainty language with low evidence support.</p>
+          </div>
+        </div>
 
-    <div class="status-strip">
-      <span class="state-dot" aria-hidden="true"></span>
-      <span id="status">idle</span>
-      <span class="spacer"></span>
-      <button id="probe" title="Start mic capture">Start</button>
-      <button id="stop" disabled title="Stop mic capture">Stop</button>
-      <details class="overflow">
-        <summary aria-label="More options">⋯</summary>
-        <div class="overflow-menu">
-          <nav>
-            <a href="#history">History</a>
-            <a href="#report">Report</a>
-            <a href="#settings">Settings</a>
-          </nav>
-          <p class="about">GleaMeet captures only your own microphone — never
-            other participants or the meeting's mixed stream.</p>
-          <pre id="log">Loading…</pre>
+        <div class="laws-group">
+          <h3>Behavioral Economics (Thaler)</h3>
+          <div class="laws-item">
+            <p class="laws-item-title">Choice Architecture</p>
+            <p class="laws-item-desc">Detects too many options without a recommended default.</p>
+          </div>
+          <div class="laws-item">
+            <p class="laws-item-title">Default Effect</p>
+            <p class="laws-item-desc">Detects stalled group decisions where a clear default could help.</p>
+          </div>
+          <div class="laws-item">
+            <p class="laws-item-title">Nudge</p>
+            <p class="laws-item-desc">Detects agreement without action structure near close.</p>
+          </div>
+          <div class="laws-item">
+            <p class="laws-item-title">Present Bias</p>
+            <p class="laws-item-desc">Detects overweighting immediate friction over future payoff.</p>
+          </div>
+        </div>
+      </div>
+
+      <details class="laws-list-compact">
+        <summary>About coaching laws</summary>
+        <div class="laws-list-content">
+          <p class="laws-intro">GleaMeet listens for patterns like these during your meeting.</p>
+
+          <div class="laws-group">
+            <h3>Persuasion &amp; Influence (Cialdini)</h3>
+            <div class="laws-item">
+              <p class="laws-item-title">Reciprocity</p>
+              <p class="laws-item-desc">Detects persuasion without first acknowledging the other side.</p>
+            </div>
+            <div class="laws-item">
+              <p class="laws-item-title">Commitment &amp; Consistency</p>
+              <p class="laws-item-desc">Detects stalled discussions where smaller commitments could help.</p>
+            </div>
+            <div class="laws-item">
+              <p class="laws-item-title">Social Proof</p>
+              <p class="laws-item-desc">Detects resistance when peer examples could reduce uncertainty.</p>
+            </div>
+            <div class="laws-item">
+              <p class="laws-item-title">Authority</p>
+              <p class="laws-item-desc">Detects recommendations without supporting evidence.</p>
+            </div>
+          </div>
+
+          <div class="laws-group">
+            <h3>Cognitive Bias (Kahneman)</h3>
+            <div class="laws-item">
+              <p class="laws-item-title">System 1 vs System 2</p>
+              <p class="laws-item-desc">Detects rapid rebuttal without acknowledgment or clarification.</p>
+            </div>
+            <div class="laws-item">
+              <p class="laws-item-title">Loss Aversion</p>
+              <p class="laws-item-desc">Detects overweighting of downside without balancing upsides.</p>
+            </div>
+            <div class="laws-item">
+              <p class="laws-item-title">Anchoring</p>
+              <p class="laws-item-desc">Detects locking discussion with concrete numbers too early.</p>
+            </div>
+            <div class="laws-item">
+              <p class="laws-item-title">Overconfidence</p>
+              <p class="laws-item-desc">Detects high certainty language with low evidence support.</p>
+            </div>
+          </div>
+
+          <div class="laws-group">
+            <h3>Behavioral Economics (Thaler)</h3>
+            <div class="laws-item">
+              <p class="laws-item-title">Choice Architecture</p>
+              <p class="laws-item-desc">Detects too many options without a recommended default.</p>
+            </div>
+            <div class="laws-item">
+              <p class="laws-item-title">Default Effect</p>
+              <p class="laws-item-desc">Detects stalled group decisions where a clear default could help.</p>
+            </div>
+            <div class="laws-item">
+              <p class="laws-item-title">Nudge</p>
+              <p class="laws-item-desc">Detects agreement without action structure near close.</p>
+            </div>
+            <div class="laws-item">
+              <p class="laws-item-title">Present Bias</p>
+              <p class="laws-item-desc">Detects overweighting immediate friction over future payoff.</p>
+            </div>
+          </div>
         </div>
       </details>
+    </div>
+
+    <!-- BOTTOM HALF: Coaching Prompts & Capture Feed (unchanged in function) -->
+    <div class="prompt-area">
+      <div class="prompt-dock">
+        <div class="prompt-card" id="prompt-card">
+          <p class="prompt-title">Coaching prompt</p>
+          <p class="prompt-text" id="prompt-text"></p>
+        </div>
+
+        <div class="capture-feed" id="feed" hidden>
+          <div id="feed-out"></div>
+          <div id="progress">idle</div>
+        </div>
+
+        <div class="status-strip">
+          <span class="state-dot" aria-hidden="true"></span>
+          <span id="status">idle</span>
+          <span class="spacer"></span>
+          <button id="probe" title="Start mic capture">Start</button>
+          <button id="stop" disabled title="Stop mic capture">Stop</button>
+          <details class="overflow">
+            <summary aria-label="More options">⋯</summary>
+            <div class="overflow-menu">
+              <nav>
+                <a href="#history">History</a>
+                <a href="#report">Report</a>
+                <a href="#settings">Settings</a>
+              </nav>
+              <p class="about">GleaMeet captures only your own microphone — never
+                other participants or the meeting's mixed stream.</p>
+              <pre id="log">Loading…</pre>
+            </div>
+          </details>
+        </div>
+      </div>
     </div>
   </div>
 
