@@ -113,11 +113,11 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   void cleanupIfTrackedMeetingTabIsGone('tracked-tab-removed');
 });
 
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (tabId !== state.meetingTabId) return;
-  if (!changeInfo.url && changeInfo.status !== 'complete') return;
 
-  const url = changeInfo.url || tab.url || '';
+  const url = changeInfo.url || '';
+  if (!url) return;
   if (isLikelyMeetingUrl(url)) return;
 
   scheduleTrackedMeetingTabCleanup('tracked-tab-left-meeting-url', 3000);
