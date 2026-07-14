@@ -774,6 +774,19 @@ async function getPreferredMeetingContext() {
         promptsMutedByUser: response.promptsMutedByUser
       };
     }
+    const pageProbe = await probeMeetingPage(tab);
+    if (pageProbe?.meetingDetected) {
+      return {
+        meetingDetected: true,
+        platform: pageProbe.platform ?? response?.platform ?? detectPlatformFromUrl(tab.url || ""),
+        tabId: tab.id,
+        status: response?.status ?? (state.meetingSessionId && !state.coachingPausedByUser ? state.promptsMutedByUser ? "muted" : "active" : "ready"),
+        meetingSessionId: response?.meetingSessionId ?? state.meetingSessionId,
+        userId: response?.userId ?? state.userId,
+        captureMode: response?.captureMode ?? state.captureMode,
+        promptsMutedByUser: response?.promptsMutedByUser ?? state.promptsMutedByUser
+      };
+    }
     if (likelyMeetingUrl && (!response || tab.active || tab.id === state.meetingTabId || !!state.meetingSessionId)) {
       return {
         meetingDetected: true,
@@ -918,6 +931,48 @@ async function ensureMeetingTabReady(tab) {
     } catch (_retryErr) {
       return null;
     }
+  }
+}
+async function probeMeetingPage(tab) {
+  if (!tab.id) return null;
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: () => {
+        const url = window.location.href;
+        const decodedUrl = decodeURIComponent(url);
+        let path = decodedUrl;
+        try {
+          path = new URL(url).pathname;
+        } catch (_err) {
+        }
+        const platform = url.includes("meet.google.com") ? "google_meet" : url.includes("teams.microsoft.com") || url.includes("teams.live.com") ? "teams" : url.includes("zoom.us") || url.includes("app.zoom.us") ? "zoom" : null;
+        if (!platform) {
+          return { meetingDetected: false, platform: null };
+        }
+        if (platform === "zoom") {
+          const hasWebClientMeetingUrl = /\/wc\/\d+(?:\/(?:join|start|meeting))?(?:\/|$)/i.test(path);
+          const visibleEndedScreen = Array.from(document.querySelectorAll('.zm-modal-body-title, .zm-modal-body-content, [role="dialog"]')).some((el) => {
+            const element = el;
+            const style = window.getComputedStyle(element);
+            const rect = element.getBoundingClientRect();
+            return style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0" && rect.width > 0 && rect.height > 0 && /ended|left|removed/i.test(element.textContent || "");
+          });
+          return { meetingDetected: hasWebClientMeetingUrl && !visibleEndedScreen, platform };
+        }
+        if (platform === "google_meet") {
+          return { meetingDetected: /meet\.google\.com\/[a-z]+-[a-z]+-[a-z]+/i.test(decodedUrl), platform };
+        }
+        return {
+          meetingDetected: decodedUrl.includes("/meet/") || decodedUrl.includes("/callingv2") || decodedUrl.includes("/light-meetings/launch") || decodedUrl.includes("/l/meetup-join") || decodedUrl.includes("type=meet") || decodedUrl.includes("lightExperience=true"),
+          platform
+        };
+      }
+    });
+    const result = results?.[0]?.result;
+    return result ?? null;
+  } catch (_err) {
+    return null;
   }
 }
 async function resolveActiveMeetingPlatform(platformHint) {
