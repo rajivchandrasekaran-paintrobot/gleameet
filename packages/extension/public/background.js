@@ -118,6 +118,8 @@ var state = {
   promptsMutedByUser: false,
   coachingPausedByUser: false
 };
+var meetingTabCleanupTimer = null;
+var meetingCleanupInProgress = null;
 var authStateReady = new Promise((resolve) => {
   chrome.storage.local.get(["sessionToken", "userId", "activeCoachingSession"], (data) => {
     if (data.sessionToken) {
@@ -147,6 +149,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   handleMessage(message, sender).then(sendResponse).catch((err) => sendResponse({ error: err.message }));
   return true;
 });
+chrome.tabs.onRemoved.addListener((tabId) => {
+  if (tabId !== state.meetingTabId) return;
+  cancelTrackedMeetingTabCleanup();
+  void cleanupIfTrackedMeetingTabIsGone("tracked-tab-removed");
+});
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (tabId !== state.meetingTabId) return;
+  if (!changeInfo.url && changeInfo.status !== "complete") return;
+  const url = changeInfo.url || tab.url || "";
+  if (isLikelyMeetingUrl(url)) return;
+  scheduleTrackedMeetingTabCleanup("tracked-tab-left-meeting-url", 3e3);
+});
 async function handleMessage(message, sender) {
   await authStateReady;
   switch (message.type) {
@@ -163,6 +177,7 @@ async function handleMessage(message, sender) {
       return handleMeetingEnded();
     case "START_COACHING":
       if (state.meetingSessionId) {
+        cancelTrackedMeetingTabCleanup();
         await refreshMeetingContextFromTabs();
         state.meetingDetected = true;
         state.status = "active";
@@ -291,6 +306,7 @@ async function handleAuthenticate(googleIdToken) {
 }
 async function handleStartCoaching(message) {
   try {
+    cancelTrackedMeetingTabCleanup();
     if (!getSessionToken()) {
       return { error: "Not authenticated. Please sign in first." };
     }
@@ -336,6 +352,7 @@ async function handleStartCoaching(message) {
 }
 async function handlePauseCoaching() {
   try {
+    cancelTrackedMeetingTabCleanup();
     if (state.eventBuffer.length > 0) await flushEventBuffer().catch(() => {
     });
     if (state.batchInterval) {
@@ -358,11 +375,16 @@ async function handlePauseCoaching() {
 }
 async function handleStopCoaching() {
   try {
+    cancelTrackedMeetingTabCleanup();
     if (state.meetingSessionId) {
       await flushEventBuffer();
       const result = await endMeeting(state.meetingSessionId);
       if (state.batchInterval) clearInterval(state.batchInterval);
       if (state.pollingInterval) clearInterval(state.pollingInterval);
+      chrome.runtime.sendMessage({ type: "STOP_MIC_CAPTURE" }).catch(() => {
+      });
+      chrome.runtime.sendMessage({ type: "STOP_TAB_CAPTURE" }).catch(() => {
+      });
       await sendMessageToMeetingTabs({ type: "DISMISS_ALL_PROMPTS" });
       state.meetingSessionId = null;
       state.meetingTabId = null;
@@ -394,6 +416,7 @@ async function handleStopCoaching() {
 }
 async function handleMeetingEnded() {
   try {
+    cancelTrackedMeetingTabCleanup();
     const context = await getPreferredMeetingContext();
     const stillInActiveMeeting = !!context?.meetingDetected && (state.status === "active" || state.status === "muted" || !!state.meetingSessionId);
     if (stillInActiveMeeting) {
@@ -405,32 +428,7 @@ async function handleMeetingEnded() {
       broadcastStatus();
       return { status: state.status, ignored: true };
     }
-    state.meetingDetected = false;
-    if (state.meetingSessionId) {
-      await flushEventBuffer().catch(() => {
-      });
-      await endMeeting(state.meetingSessionId).catch((err) => {
-        console.error("[GleaMeet] End meeting on meeting-ended cleanup failed:", err);
-      });
-    }
-    if (state.batchInterval) {
-      clearInterval(state.batchInterval);
-      state.batchInterval = null;
-    }
-    if (state.pollingInterval) {
-      clearInterval(state.pollingInterval);
-      state.pollingInterval = null;
-    }
-    state.meetingSessionId = null;
-    state.meetingTabId = null;
-    state.platform = null;
-    state.status = "off";
-    state.eventBuffer = [];
-    state.captureMode = "full_meeting";
-    state.promptsMutedByUser = false;
-    state.coachingPausedByUser = false;
-    broadcastStatus();
-    return { status: "off" };
+    return cleanupActiveMeetingSession("meeting-ended");
   } catch (err) {
     state.status = "error";
     broadcastStatus();
@@ -438,6 +436,7 @@ async function handleMeetingEnded() {
   }
 }
 async function handleCoachingActive(message, sender) {
+  cancelTrackedMeetingTabCleanup();
   state.meetingDetected = true;
   state.meetingTabId = sender?.tab?.id ?? state.meetingTabId;
   state.platform = message.platform ?? state.platform;
@@ -584,6 +583,85 @@ function persistActiveCoachingSession() {
     updatedAt: Date.now()
   };
   chrome.storage.local.set({ activeCoachingSession: snapshot });
+}
+function cancelTrackedMeetingTabCleanup() {
+  if (!meetingTabCleanupTimer) return;
+  clearTimeout(meetingTabCleanupTimer);
+  meetingTabCleanupTimer = null;
+}
+function scheduleTrackedMeetingTabCleanup(reason, delayMs) {
+  if (!state.meetingSessionId && state.status === "off") return;
+  cancelTrackedMeetingTabCleanup();
+  meetingTabCleanupTimer = setTimeout(() => {
+    meetingTabCleanupTimer = null;
+    void cleanupIfTrackedMeetingTabIsGone(reason);
+  }, delayMs);
+}
+async function cleanupIfTrackedMeetingTabIsGone(reason) {
+  await authStateReady;
+  if (reason === "tracked-tab-removed") {
+    await cleanupActiveMeetingSession(reason);
+    return;
+  }
+  const context = await getPreferredMeetingContext();
+  if (context?.meetingDetected) {
+    state.meetingDetected = true;
+    state.platform = context.platform ?? state.platform;
+    state.meetingTabId = context.tabId ?? state.meetingTabId;
+    if (state.meetingSessionId && !state.coachingPausedByUser && !state.promptsMutedByUser) {
+      state.status = "active";
+      startSessionIntervals();
+    } else if (state.status === "off") {
+      state.status = "ready";
+    }
+    broadcastStatus();
+    return;
+  }
+  await cleanupActiveMeetingSession(reason);
+}
+async function cleanupActiveMeetingSession(reason) {
+  if (meetingCleanupInProgress) return meetingCleanupInProgress;
+  meetingCleanupInProgress = (async () => {
+    const sessionId = state.meetingSessionId;
+    if (sessionId) {
+      await flushEventBuffer().catch(() => {
+      });
+      await endMeeting(sessionId).catch((err) => {
+        console.error(`[GleaMeet] End meeting cleanup failed (${reason}):`, err);
+      });
+    }
+    await sendMessageToMeetingTabs({ type: "DISMISS_ALL_PROMPTS" }).catch(() => {
+    });
+    chrome.runtime.sendMessage({ type: "STOP_MIC_CAPTURE" }).catch(() => {
+    });
+    chrome.runtime.sendMessage({ type: "STOP_TAB_CAPTURE" }).catch(() => {
+    });
+    if (state.batchInterval) {
+      clearInterval(state.batchInterval);
+      state.batchInterval = null;
+    }
+    if (state.pollingInterval) {
+      clearInterval(state.pollingInterval);
+      state.pollingInterval = null;
+    }
+    state.meetingDetected = false;
+    state.meetingSessionId = null;
+    state.meetingTabId = null;
+    state.platform = null;
+    state.status = "off";
+    state.eventBuffer = [];
+    state.captureMode = "full_meeting";
+    state.promptsMutedByUser = false;
+    state.coachingPausedByUser = false;
+    chrome.storage.local.remove("activeCoachingSession");
+    broadcastStatus();
+    return { status: "off" };
+  })();
+  try {
+    return await meetingCleanupInProgress;
+  } finally {
+    meetingCleanupInProgress = null;
+  }
 }
 function broadcastPrompt(prompt) {
   void sendMessageToMeetingTabs({
