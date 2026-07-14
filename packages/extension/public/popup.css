@@ -23,8 +23,25 @@ body {
   font-weight: 600;
   color: #1a1a2e;
 }
-.popup-version {
+.icon-btn {
+  width: 28px;
+  height: 28px;
   margin-left: auto;
+  border: 1px solid #e0e0e8;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #4b5563;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.icon-btn:hover {
+  background: #f3f4f6;
+  border-color: #cfd3dc;
+  color: #111827;
+}
+.popup-version {
   font-size: 11px;
   font-weight: 600;
   color: #8b8ba0;

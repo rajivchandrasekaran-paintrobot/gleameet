@@ -440,6 +440,10 @@ export const Popup: React.FC = () => {
     chrome.runtime.sendMessage({ type: 'UNMUTE_COACHING' });
   };
 
+  const handleReloadExtension = () => {
+    chrome.runtime.reload();
+  };
+
   const ensureToken = (): Promise<void> => new Promise((resolve, reject) => {
     chrome.storage.local.get(['sessionToken', 'userId'], (items) => {
       if (items.sessionToken) {
@@ -853,6 +857,15 @@ export const Popup: React.FC = () => {
     <div className="popup-container">
       <div className="popup-header">
         <h1>GleaMeet</h1>
+        <button
+          className="icon-btn"
+          type="button"
+          title="Reload extension"
+          aria-label="Reload extension"
+          onClick={handleReloadExtension}
+        >
+          ↻
+        </button>
         <span className="popup-version">v{extensionVersion}</span>
       </div>
 
@@ -938,9 +951,14 @@ export const Popup: React.FC = () => {
             )}
 
             {state.status === 'off' && (
-              <p style={{ fontSize: '13px', color: '#6b6b80', textAlign: 'center' }}>
-                Join a supported Google Meet, Teams, or Zoom web meeting to start coaching
-              </p>
+              <>
+                <p style={{ fontSize: '13px', color: '#6b6b80', textAlign: 'center' }}>
+                  Join a supported Google Meet, Teams, or Zoom web meeting to start coaching
+                </p>
+                <button className="btn btn-secondary" type="button" onClick={handleReloadExtension}>
+                  Reload Extension
+                </button>
+              </>
             )}
 
             {state.status === 'error' && (

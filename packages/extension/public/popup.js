@@ -24926,6 +24926,9 @@
     const handleUnmute = () => {
       chrome.runtime.sendMessage({ type: "UNMUTE_COACHING" });
     };
+    const handleReloadExtension = () => {
+      chrome.runtime.reload();
+    };
     const ensureToken = () => new Promise((resolve, reject) => {
       chrome.storage.local.get(["sessionToken", "userId"], (items) => {
         if (items.sessionToken) {
@@ -25259,6 +25262,17 @@
     return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "popup-container", children: [
       /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "popup-header", children: [
         /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h1", { children: "GleaMeet" }),
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+          "button",
+          {
+            className: "icon-btn",
+            type: "button",
+            title: "Reload extension",
+            "aria-label": "Reload extension",
+            onClick: handleReloadExtension,
+            children: "\u21BB"
+          }
+        ),
         /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { className: "popup-version", children: [
           "v",
           extensionVersion
@@ -25308,7 +25322,10 @@
             /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-primary", onClick: handleUnmute, children: "Resume Prompts" }),
             /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-danger", onClick: handleStopCoaching, children: "Stop Coaching" })
           ] }),
-          state.status === "off" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { style: { fontSize: "13px", color: "#6b6b80", textAlign: "center" }, children: "Join a supported Google Meet, Teams, or Zoom web meeting to start coaching" }),
+          state.status === "off" && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { style: { fontSize: "13px", color: "#6b6b80", textAlign: "center" }, children: "Join a supported Google Meet, Teams, or Zoom web meeting to start coaching" }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "btn btn-secondary", type: "button", onClick: handleReloadExtension, children: "Reload Extension" })
+          ] }),
           state.status === "error" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { style: { fontSize: "13px", color: "#cc0000", textAlign: "center" }, children: "Connection error. Please try again." })
         ] })
       ] }),
