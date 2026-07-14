@@ -8,10 +8,11 @@
   var tabInterval = null;
   var tabAudioCtx = null;
   var tabSessionId = null;
+  var expectedRecorderStops = /* @__PURE__ */ new WeakSet();
   chrome.runtime.onMessage.addListener(async (message) => {
     if (message.type === "START_MIC_CAPTURE") {
       const { meetingSessionId, sessionToken, apiBase } = message;
-      if (micRecorder && micSessionId === meetingSessionId) {
+      if (micRecorder && micSessionId === meetingSessionId && isRecorderHealthy(micRecorder)) {
         return;
       }
       stopMicCapture();
@@ -34,7 +35,7 @@
     }
     if (message.type === "START_TAB_CAPTURE") {
       const { meetingSessionId, sessionToken, apiBase, streamId } = message;
-      if (tabRecorder && tabSessionId === meetingSessionId) {
+      if (tabRecorder && tabSessionId === meetingSessionId && isRecorderHealthy(tabRecorder)) {
         return;
       }
       stopTabCapture();
@@ -71,12 +72,16 @@
       console.log("[GleaMeet Offscreen] Tab capture stopped");
     }
   });
+  function isRecorderHealthy(recorder) {
+    return recorder.state === "recording" && recorder.stream.active && recorder.stream.getAudioTracks().some((track) => track.readyState === "live");
+  }
   function stopMicCapture() {
     if (micInterval) {
       clearInterval(micInterval);
       micInterval = null;
     }
     if (micRecorder) {
+      expectedRecorderStops.add(micRecorder);
       if (micRecorder.state === "recording") {
         try {
           micRecorder.stop();
@@ -94,6 +99,7 @@
       tabInterval = null;
     }
     if (tabRecorder) {
+      expectedRecorderStops.add(tabRecorder);
       if (tabRecorder.state === "recording") {
         try {
           tabRecorder.stop();
@@ -113,6 +119,30 @@
   function startRecording(stream, streamType, meetingSessionId, sessionToken, apiBase) {
     const recorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
     let chunkStartedAt = Date.now();
+    let stopReported = false;
+    const reportUnexpectedStop = (reason) => {
+      if (stopReported || expectedRecorderStops.has(recorder)) return;
+      stopReported = true;
+      chrome.runtime.sendMessage({
+        type: "AUDIO_CAPTURE_STOPPED",
+        stream: streamType,
+        meetingSessionId,
+        reason
+      }).catch(() => {
+      });
+    };
+    recorder.onerror = () => reportUnexpectedStop("recorder-error");
+    recorder.onstop = () => reportUnexpectedStop("recorder-stopped");
+    stream.getAudioTracks().forEach((track) => {
+      track.addEventListener("ended", () => reportUnexpectedStop("track-ended"));
+      track.addEventListener("mute", () => {
+        setTimeout(() => {
+          if (track.muted && recorder.state === "recording") {
+            reportUnexpectedStop("track-muted");
+          }
+        }, 3e4);
+      });
+    });
     recorder.ondataavailable = async (e) => {
       if (!e.data || e.data.size < 1e3) return;
       const blob = e.data;
@@ -143,11 +173,15 @@
     };
     recorder.start();
     const interval = setInterval(() => {
-      if (recorder.state === "recording") {
-        try {
-          recorder.requestData();
-        } catch (_) {
-        }
+      const liveAudioTrack = stream.getAudioTracks().some((track) => track.readyState === "live");
+      if (recorder.state !== "recording" || !stream.active || !liveAudioTrack) {
+        reportUnexpectedStop("health-check-failed");
+        return;
+      }
+      try {
+        recorder.requestData();
+      } catch (_) {
+        reportUnexpectedStop("request-data-failed");
       }
     }, 1e4);
     return { recorder, interval };

@@ -9,11 +9,12 @@ let tabRecorder: MediaRecorder | null = null;
 let tabInterval: ReturnType<typeof setInterval> | null = null;
 let tabAudioCtx: AudioContext | null = null;
 let tabSessionId: string | null = null;
+const expectedRecorderStops = new WeakSet<MediaRecorder>();
 
 chrome.runtime.onMessage.addListener(async (message) => {
   if (message.type === "START_MIC_CAPTURE") {
     const { meetingSessionId, sessionToken, apiBase } = message;
-    if (micRecorder && micSessionId === meetingSessionId) {
+    if (micRecorder && micSessionId === meetingSessionId && isRecorderHealthy(micRecorder)) {
       return;
     }
     stopMicCapture();
@@ -38,7 +39,7 @@ chrome.runtime.onMessage.addListener(async (message) => {
 
   if (message.type === "START_TAB_CAPTURE") {
     const { meetingSessionId, sessionToken, apiBase, streamId } = message;
-    if (tabRecorder && tabSessionId === meetingSessionId) {
+    if (tabRecorder && tabSessionId === meetingSessionId && isRecorderHealthy(tabRecorder)) {
       return;
     }
     stopTabCapture();
@@ -87,9 +88,16 @@ chrome.runtime.onMessage.addListener(async (message) => {
   }
 });
 
+function isRecorderHealthy(recorder: MediaRecorder): boolean {
+  return recorder.state === "recording" &&
+    recorder.stream.active &&
+    recorder.stream.getAudioTracks().some(track => track.readyState === "live");
+}
+
 function stopMicCapture(): void {
   if (micInterval) { clearInterval(micInterval); micInterval = null; }
   if (micRecorder) {
+    expectedRecorderStops.add(micRecorder);
     if (micRecorder.state === "recording") {
       try { micRecorder.stop(); } catch (_) {}
     }
@@ -102,6 +110,7 @@ function stopMicCapture(): void {
 function stopTabCapture(): void {
   if (tabInterval) { clearInterval(tabInterval); tabInterval = null; }
   if (tabRecorder) {
+    expectedRecorderStops.add(tabRecorder);
     if (tabRecorder.state === "recording") {
       try { tabRecorder.stop(); } catch (_) {}
     }
@@ -118,6 +127,31 @@ function stopTabCapture(): void {
 function startRecording(stream: MediaStream, streamType: string, meetingSessionId: string, sessionToken: string, apiBase: string): { recorder: MediaRecorder; interval: ReturnType<typeof setInterval> } {
   const recorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
   let chunkStartedAt = Date.now();
+  let stopReported = false;
+
+  const reportUnexpectedStop = (reason: string): void => {
+    if (stopReported || expectedRecorderStops.has(recorder)) return;
+    stopReported = true;
+    chrome.runtime.sendMessage({
+      type: "AUDIO_CAPTURE_STOPPED",
+      stream: streamType,
+      meetingSessionId,
+      reason,
+    }).catch(() => {});
+  };
+
+  recorder.onerror = () => reportUnexpectedStop("recorder-error");
+  recorder.onstop = () => reportUnexpectedStop("recorder-stopped");
+  stream.getAudioTracks().forEach(track => {
+    track.addEventListener("ended", () => reportUnexpectedStop("track-ended"));
+    track.addEventListener("mute", () => {
+      setTimeout(() => {
+        if (track.muted && recorder.state === "recording") {
+          reportUnexpectedStop("track-muted");
+        }
+      }, 30000);
+    });
+  });
 
   recorder.ondataavailable = async e => {
     if (!e.data || e.data.size < 1000) return;
@@ -154,8 +188,16 @@ function startRecording(stream: MediaStream, streamType: string, meetingSessionI
 
   recorder.start();
   const interval = setInterval(() => {
-    if (recorder.state === "recording") {
-      try { recorder.requestData(); } catch (_) {}
+    const liveAudioTrack = stream.getAudioTracks().some(track => track.readyState === "live");
+    if (recorder.state !== "recording" || !stream.active || !liveAudioTrack) {
+      reportUnexpectedStop("health-check-failed");
+      return;
+    }
+
+    try {
+      recorder.requestData();
+    } catch (_) {
+      reportUnexpectedStop("request-data-failed");
     }
   }, 10000);
 

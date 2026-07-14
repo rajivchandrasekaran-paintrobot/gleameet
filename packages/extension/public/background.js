@@ -120,6 +120,7 @@ var state = {
 };
 var meetingTabCleanupTimer = null;
 var meetingCleanupInProgress = null;
+var lastAudioCaptureRestartAt = 0;
 var authStateReady = new Promise((resolve) => {
   chrome.storage.local.get(["sessionToken", "userId", "activeCoachingSession", "lastMeetingContext"], (data) => {
     if (data.sessionToken) {
@@ -293,6 +294,8 @@ async function handleMessage(message, sender) {
     case "AUDIO_TRANSCRIPT_RESULT":
       broadcastAudioTranscript(message);
       return { ok: true };
+    case "AUDIO_CAPTURE_STOPPED":
+      return handleAudioCaptureStopped(message);
     case "COACHING_ACTIVE":
       return handleCoachingActive(message, sender);
     default:
@@ -606,6 +609,21 @@ function handleStartAudioCapture(meetingSessionId, captureMode = state.captureMo
       });
     });
   });
+}
+function handleAudioCaptureStopped(message) {
+  if (!message.meetingSessionId || message.meetingSessionId !== state.meetingSessionId || state.status !== "active" || state.coachingPausedByUser || state.promptsMutedByUser) {
+    return { ok: true, ignored: true };
+  }
+  const now = Date.now();
+  if (now - lastAudioCaptureRestartAt < 5e3) {
+    return { ok: true, ignored: true, reason: "restart-throttled" };
+  }
+  lastAudioCaptureRestartAt = now;
+  console.warn(
+    `[GleaMeet] ${message.stream || "audio"} capture stopped during active coaching; restarting (${message.reason || "unknown"})`
+  );
+  handleStartAudioCapture(message.meetingSessionId, state.captureMode);
+  return { ok: true, restarted: true };
 }
 function broadcastStatus(statusReason) {
   persistActiveCoachingSession();
