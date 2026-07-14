@@ -201,12 +201,19 @@ Deploy GleaMeet so the Chrome extension works for anyone — no local backend ne
 
 ## Loading the Extension
 
-1. Build the extension (or use source directly for development)
-2. Open Chrome → `chrome://extensions/`
-3. Enable "Developer mode" (top right)
-4. Click "Load unpacked" → select `packages/extension/public/`
-5. Navigate to a Google Meet call
-6. Click the GleaMeet popup → Sign In → Enable Coaching
+For normal testing or use, install the public extension package from the release repo:
+
+1. Download [gleameet-extension.zip](https://github.com/rajivchandrasekaran-paintrobot/gleameet-extension/raw/main/gleameet-extension.zip)
+2. Unzip the file.
+3. Open Chrome → `chrome://extensions/`
+4. Enable **Developer mode** using the top-right toggle.
+5. Click **Load unpacked** → select the `public` folder from the unzipped download.
+6. Open a supported browser meeting: Zoom web, Google Meet, or Microsoft Teams web.
+7. Click the GleaMeet popup → Sign In → Start Coaching.
+
+For local extension development, build this repo and load `packages/extension/public/` instead.
+
+The current public extension includes the July 2026 reliability fixes for Zoom/Meet/Teams meeting rediscovery, stop/resume coaching, prompt delivery acknowledgment, the **Use only my voice** privacy mode, and a popup **Reload Extension** recovery button.
 
 ## API Endpoints
 
