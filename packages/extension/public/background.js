@@ -144,6 +144,7 @@ async function handleMessage(message) {
       return handleMeetingEnded();
     case "START_COACHING":
       if (state.meetingSessionId) {
+        state.meetingDetected = true;
         state.status = "active";
         state.promptsMutedByUser = false;
         startSessionIntervals();
@@ -530,7 +531,9 @@ async function refreshMeetingContextFromTabs() {
   if (context?.meetingDetected) {
     state.meetingDetected = true;
     state.platform = context.platform ?? state.platform;
-    if (!state.meetingSessionId && state.status === "off") {
+    if (state.meetingSessionId && state.status === "off") {
+      state.status = context.status === "active" || context.status === "muted" ? context.status : "ready";
+    } else if (!state.meetingSessionId && state.status === "off") {
       state.status = "ready";
     }
     return;
