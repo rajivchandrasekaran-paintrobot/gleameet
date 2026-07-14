@@ -666,7 +666,11 @@ async function cleanupActiveMeetingSession(reason) {
 function broadcastPrompt(prompt) {
   void sendMessageToMeetingTabs({
     type: "SHOW_PROMPT",
-    prompt
+    prompt,
+    meetingSessionId: state.meetingSessionId,
+    userId: state.userId,
+    platform: state.platform,
+    captureMode: state.captureMode
   });
 }
 function broadcastAudioTranscript(message) {

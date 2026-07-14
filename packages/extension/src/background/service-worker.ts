@@ -724,6 +724,10 @@ function broadcastPrompt(prompt: PromptEvent): void {
   void sendMessageToMeetingTabs({
     type: 'SHOW_PROMPT',
     prompt,
+    meetingSessionId: state.meetingSessionId,
+    userId: state.userId,
+    platform: state.platform,
+    captureMode: state.captureMode,
   });
 }
 

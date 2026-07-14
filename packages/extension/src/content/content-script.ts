@@ -992,7 +992,19 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     }
 
     case 'SHOW_PROMPT':
-      if (!state.promptsMutedByUser && (detectMeeting() || shouldTrustLikelyMeetingUrl())) {
+      if (message.meetingSessionId) {
+        state.meetingSessionId = message.meetingSessionId;
+      }
+      if (message.userId) {
+        state.userId = message.userId;
+      }
+      state.platform = message.platform ?? state.platform ?? getPlatform();
+      state.captureMode = message.captureMode === 'user_voice_only' ? 'user_voice_only' : state.captureMode;
+
+      if (
+        !state.promptsMutedByUser &&
+        (state.meetingSessionId || detectMeeting() || shouldTrustLikelyMeetingUrl())
+      ) {
         state.meetingDetected = true;
         if (state.status !== 'active') {
           state.status = 'active';
