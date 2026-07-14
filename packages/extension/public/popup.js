@@ -24643,6 +24643,26 @@
       meetingSessionId: meetingSessionId || null
     };
   }
+  function isLikelyMeetingUrl(url) {
+    const platform = detectPlatformFromUrl(url);
+    if (!platform) return false;
+    const decodedUrl = decodeURIComponent(url);
+    let path = decodedUrl;
+    try {
+      path = new URL(url).pathname;
+    } catch (_err) {
+    }
+    if (platform === "google_meet") {
+      return /meet\.google\.com\/[a-z]+-[a-z]+-[a-z]+/i.test(decodedUrl);
+    }
+    if (platform === "zoom") {
+      return /\/wc\/\d+(?:\/(?:join|start|meeting))?(?:\/|$)/i.test(path);
+    }
+    if (platform === "teams") {
+      return decodedUrl.includes("/meet/") || decodedUrl.includes("/callingv2") || decodedUrl.includes("/light-meetings/launch") || decodedUrl.includes("/l/meetup-join") || decodedUrl.includes("type=meet") || decodedUrl.includes("lightExperience=true");
+    }
+    return false;
+  }
   function queryMeetingTabContext() {
     return new Promise((resolve) => {
       collectPopupMeetingTabs().then((tabs) => {
@@ -24672,7 +24692,7 @@
               return;
             }
             const platform = detectPlatformFromUrl(tab.url || "");
-            if (tab.url && platform) {
+            if (tab.url && platform && isLikelyMeetingUrl(tab.url)) {
               resolve({
                 status: "ready",
                 meetingDetected: true,
@@ -24699,7 +24719,7 @@
       })
     ]);
     const tabs = [...meetingTabs];
-    if (activeTab?.id && detectPlatformFromUrl(activeTab.url || "") && !tabs.some((tab) => tab.id === activeTab.id)) {
+    if (activeTab?.id && isLikelyMeetingUrl(activeTab.url || "") && !tabs.some((tab) => tab.id === activeTab.id)) {
       tabs.unshift(activeTab);
     }
     return tabs;

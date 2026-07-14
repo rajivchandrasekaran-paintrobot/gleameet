@@ -325,6 +325,9 @@
   function shouldTrustLikelyMeetingUrl() {
     return isLikelyMeetingUrl() && (state.meetingDetected || state.status === "active" || state.status === "muted");
   }
+  function shouldRediscoverMeetingFromUrl() {
+    return isLikelyMeetingUrl() && getPlatform() === "zoom";
+  }
   function isVisibleElement(el) {
     const element = el;
     const style = window.getComputedStyle(element);
@@ -351,11 +354,11 @@
     }, debounceMs);
   }
   function startMeetingDetection() {
-    if (detectMeeting() && !state.meetingDetected) {
+    if ((detectMeeting() || shouldRediscoverMeetingFromUrl()) && !state.meetingDetected) {
       onMeetingDetected();
     }
     state.mutationObserver = new MutationObserver(() => {
-      const inMeeting = detectMeeting();
+      const inMeeting = detectMeeting() || shouldRediscoverMeetingFromUrl();
       if (inMeeting && !state.meetingDetected) {
         cancelMeetingEndDebounce();
         onMeetingDetected();
@@ -924,8 +927,11 @@
         dismissCurrentPrompt();
         break;
       case "GET_CONTENT_STATUS":
+        if (!state.meetingDetected && shouldRediscoverMeetingFromUrl()) {
+          onMeetingDetected();
+        }
         sendResponse({
-          meetingDetected: state.meetingDetected || detectMeeting() || shouldTrustLikelyMeetingUrl(),
+          meetingDetected: state.meetingDetected || detectMeeting() || shouldTrustLikelyMeetingUrl() || shouldRediscoverMeetingFromUrl(),
           platform: state.platform ?? getPlatform(),
           status: state.status,
           meetingSessionId: state.meetingSessionId,
@@ -996,7 +1002,7 @@
       lastUrl = window.location.href;
       state.platform = getPlatform();
     }
-    const inMeeting = detectMeeting();
+    const inMeeting = detectMeeting() || shouldRediscoverMeetingFromUrl();
     if (inMeeting && !state.meetingDetected) {
       cancelMeetingEndDebounce();
       onMeetingDetected();

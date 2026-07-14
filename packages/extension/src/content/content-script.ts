@@ -277,6 +277,10 @@ function shouldTrustLikelyMeetingUrl(): boolean {
   return isLikelyMeetingUrl() && (state.meetingDetected || state.status === 'active' || state.status === 'muted');
 }
 
+function shouldRediscoverMeetingFromUrl(): boolean {
+  return isLikelyMeetingUrl() && getPlatform() === 'zoom';
+}
+
 function isVisibleElement(el: Element): boolean {
   const element = el as HTMLElement;
   const style = window.getComputedStyle(element);
@@ -311,14 +315,14 @@ function scheduleMeetingEndDebounce(): void {
 /** Start observing the DOM for meeting lifecycle changes */
 function startMeetingDetection(): void {
   // Initial check
-  if (detectMeeting() && !state.meetingDetected) {
+  if ((detectMeeting() || shouldRediscoverMeetingFromUrl()) && !state.meetingDetected) {
     onMeetingDetected();
   }
 
   // Observe DOM changes for meeting start/end
   // Use a debounce for "ended" to avoid false positives from transient DOM changes
   state.mutationObserver = new MutationObserver(() => {
-    const inMeeting = detectMeeting();
+    const inMeeting = detectMeeting() || shouldRediscoverMeetingFromUrl();
     if (inMeeting && !state.meetingDetected) {
       // Cancel any pending end debounce — we're still in the meeting
       cancelMeetingEndDebounce();
@@ -1069,8 +1073,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       break;
 
     case 'GET_CONTENT_STATUS':
+      if (!state.meetingDetected && shouldRediscoverMeetingFromUrl()) {
+        onMeetingDetected();
+      }
       sendResponse({
-        meetingDetected: state.meetingDetected || detectMeeting() || shouldTrustLikelyMeetingUrl(),
+        meetingDetected: state.meetingDetected || detectMeeting() || shouldTrustLikelyMeetingUrl() || shouldRediscoverMeetingFromUrl(),
         platform: state.platform ?? getPlatform(),
         status: state.status,
         meetingSessionId: state.meetingSessionId,
@@ -1157,7 +1164,7 @@ setInterval(() => {
     state.platform = getPlatform();
   }
 
-  const inMeeting = detectMeeting();
+  const inMeeting = detectMeeting() || shouldRediscoverMeetingFromUrl();
   if (inMeeting && !state.meetingDetected) {
     cancelMeetingEndDebounce();
     onMeetingDetected();

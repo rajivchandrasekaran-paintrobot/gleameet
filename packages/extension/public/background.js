@@ -754,7 +754,11 @@ async function getPreferredMeetingContext() {
         meetingDetected: true,
         platform: detectPlatformFromUrl(tab.url || ""),
         tabId: tab.id,
-        status: "ready"
+        status: state.meetingSessionId && !state.coachingPausedByUser ? state.promptsMutedByUser ? "muted" : "active" : "ready",
+        meetingSessionId: state.meetingSessionId,
+        userId: state.userId,
+        captureMode: state.captureMode,
+        promptsMutedByUser: state.promptsMutedByUser
       };
     }
   }
