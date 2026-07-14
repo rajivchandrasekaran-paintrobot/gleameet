@@ -113,7 +113,8 @@ var state = {
   eventBuffer: [],
   pollingInterval: null,
   batchInterval: null,
-  captureMode: "full_meeting"
+  captureMode: "full_meeting",
+  promptsMutedByUser: false
 };
 var authStateReady = new Promise((resolve) => {
   chrome.storage.local.get(["sessionToken", "userId"], (data) => {
@@ -144,8 +145,8 @@ async function handleMessage(message) {
     case "START_COACHING":
       if (state.meetingSessionId) {
         state.status = "active";
-        state.batchInterval = setInterval(flushEventBuffer, 3e3);
-        state.pollingInterval = setInterval(pollForPrompts, 2e3);
+        state.promptsMutedByUser = false;
+        startSessionIntervals();
         broadcastStatus();
         await sendMessageToMeetingTabs({
           type: "COACHING_STARTED",
@@ -163,10 +164,13 @@ async function handleMessage(message) {
       return handleStopCoaching();
     case "MUTE_COACHING":
       state.status = "muted";
+      state.promptsMutedByUser = true;
       broadcastStatus();
       return { status: "muted" };
     case "UNMUTE_COACHING":
       state.status = "active";
+      state.promptsMutedByUser = false;
+      startSessionIntervals();
       broadcastStatus();
       return { status: "active" };
     case "INGEST_EVENT":
@@ -176,13 +180,20 @@ async function handleMessage(message) {
       return { buffered: true };
     case "GET_STATUS":
       await refreshMeetingContextFromTabs();
+      if (state.status === "muted" && !state.promptsMutedByUser && state.meetingSessionId) {
+        state.status = "active";
+        startSessionIntervals();
+        broadcastStatus();
+      }
       return {
         status: state.status,
         meetingDetected: state.meetingDetected,
         meetingSessionId: state.meetingSessionId,
         userId: state.userId,
         platform: state.platform,
-        authenticated: !!getSessionToken()
+        authenticated: !!getSessionToken(),
+        captureMode: state.captureMode,
+        promptsMutedByUser: state.promptsMutedByUser
       };
     case "SET_AUTH_TOKEN":
       setSessionToken(message.token);
@@ -272,8 +283,8 @@ async function handleStartCoaching(message) {
     state.status = "active";
     state.eventBuffer = [];
     state.captureMode = captureMode;
-    state.batchInterval = setInterval(flushEventBuffer, 3e3);
-    state.pollingInterval = setInterval(pollForPrompts, 2e3);
+    state.promptsMutedByUser = false;
+    startSessionIntervals();
     await sendMessageToMeetingTabs({
       type: "COACHING_STARTED",
       meetingSessionId: response.meeting_session_id,
@@ -322,6 +333,7 @@ async function handleStopCoaching() {
       state.status = state.meetingDetected ? "ready" : "off";
       state.eventBuffer = [];
       state.captureMode = "full_meeting";
+      state.promptsMutedByUser = false;
       state.batchInterval = null;
       state.pollingInterval = null;
       if (!state.meetingDetected) {
@@ -376,6 +388,7 @@ async function handleMeetingEnded() {
     state.status = "off";
     state.eventBuffer = [];
     state.captureMode = "full_meeting";
+    state.promptsMutedByUser = false;
     broadcastStatus();
     return { status: "off" };
   } catch (err) {
@@ -477,7 +490,9 @@ function broadcastStatus() {
     status: state.status,
     meetingDetected: state.meetingDetected,
     meetingSessionId: state.meetingSessionId,
-    platform: state.platform
+    platform: state.platform,
+    captureMode: state.captureMode,
+    promptsMutedByUser: state.promptsMutedByUser
   }).catch(() => {
   });
 }
@@ -497,6 +512,12 @@ function broadcastAudioTranscript(message) {
     endOffsetMs: message.endOffsetMs,
     eventTimeMs: message.eventTimeMs
   });
+}
+function startSessionIntervals() {
+  if (state.batchInterval) clearInterval(state.batchInterval);
+  if (state.pollingInterval) clearInterval(state.pollingInterval);
+  state.batchInterval = setInterval(flushEventBuffer, 3e3);
+  state.pollingInterval = setInterval(pollForPrompts, 2e3);
 }
 function getPreferredMeetingTab(callback) {
   chrome.tabs.query({ url: [...MEETING_TAB_URL_PATTERNS] }, (tabs) => {

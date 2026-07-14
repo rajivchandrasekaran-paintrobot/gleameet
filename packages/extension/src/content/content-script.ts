@@ -32,6 +32,7 @@ interface ContentState {
   diagnosticInterval: ReturnType<typeof setInterval> | null;
   selfNames: Set<string>;
   captureMode: CaptureMode;
+  promptsMutedByUser: boolean;
 }
 
 const state: ContentState = {
@@ -51,6 +52,7 @@ const state: ContentState = {
   diagnosticInterval: null,
   selfNames: new Set<string>(),
   captureMode: 'full_meeting',
+  promptsMutedByUser: false,
 };
 
 // Caption selectors — ordered by likelihood, all tried on every DOM mutation
@@ -972,7 +974,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   switch (message.type) {
     case 'STATUS_UPDATE': {
       const previousStatus = state.status;
-      state.status = message.status;
+      const incomingMuted = message.status === 'muted' && message.promptsMutedByUser === true;
+      state.status = incomingMuted ? 'muted' : (message.status === 'muted' ? 'active' : message.status);
+      state.promptsMutedByUser = incomingMuted;
       state.meetingDetected = message.meetingDetected ?? state.meetingDetected;
       state.meetingSessionId = message.meetingSessionId;
       state.platform = message.platform ?? state.platform ?? getPlatform();
@@ -988,7 +992,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     }
 
     case 'SHOW_PROMPT':
-      if (state.status !== 'muted' && (detectMeeting() || shouldTrustLikelyMeetingUrl())) {
+      if (!state.promptsMutedByUser && (detectMeeting() || shouldTrustLikelyMeetingUrl())) {
         state.meetingDetected = true;
         if (state.status !== 'active') {
           state.status = 'active';
@@ -1007,6 +1011,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       state.platform = message.platform ?? getPlatform();
       state.captureMode = message.captureMode === 'user_voice_only' ? 'user_voice_only' : 'full_meeting';
       state.status = 'active';
+      state.promptsMutedByUser = false;
       state.meetingDetected = true;
       updateStatusIndicator();
       startSignalCapture();
@@ -1049,6 +1054,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         meetingDetected: state.meetingDetected || detectMeeting() || shouldTrustLikelyMeetingUrl(),
         platform: state.platform ?? getPlatform(),
         status: state.status,
+        promptsMutedByUser: state.promptsMutedByUser,
       });
       return true;
   }

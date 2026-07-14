@@ -21,12 +21,14 @@ interface SessionState {
   pollingInterval: ReturnType<typeof setInterval> | null;
   batchInterval: ReturnType<typeof setInterval> | null;
   captureMode: CaptureMode;
+  promptsMutedByUser: boolean;
 }
 
 interface TabMeetingContext {
   meetingDetected: boolean;
   platform: Platform | null;
   status?: SessionState['status'];
+  promptsMutedByUser?: boolean;
 }
 
 interface MeetingTabMessage {
@@ -44,6 +46,7 @@ const state: SessionState = {
   pollingInterval: null,
   batchInterval: null,
   captureMode: 'full_meeting',
+  promptsMutedByUser: false,
 };
 
 const authStateReady = new Promise<void>((resolve) => {
@@ -85,8 +88,8 @@ async function handleMessage(message: any): Promise<any> {
       if (state.meetingSessionId) {
         // Resuming existing session — reuse session, just restart intervals
         state.status = 'active';
-        state.batchInterval = setInterval(flushEventBuffer, 3000);
-        state.pollingInterval = setInterval(pollForPrompts, 2000);
+        state.promptsMutedByUser = false;
+        startSessionIntervals();
         broadcastStatus();
         // Notify content script
         await sendMessageToMeetingTabs({
@@ -108,11 +111,14 @@ async function handleMessage(message: any): Promise<any> {
 
     case 'MUTE_COACHING':
       state.status = 'muted';
+      state.promptsMutedByUser = true;
       broadcastStatus();
       return { status: 'muted' };
 
     case 'UNMUTE_COACHING':
       state.status = 'active';
+      state.promptsMutedByUser = false;
+      startSessionIntervals();
       broadcastStatus();
       return { status: 'active' };
 
@@ -124,6 +130,11 @@ async function handleMessage(message: any): Promise<any> {
 
     case 'GET_STATUS':
       await refreshMeetingContextFromTabs();
+      if (state.status === 'muted' && !state.promptsMutedByUser && state.meetingSessionId) {
+        state.status = 'active';
+        startSessionIntervals();
+        broadcastStatus();
+      }
       return {
         status: state.status,
         meetingDetected: state.meetingDetected,
@@ -131,6 +142,8 @@ async function handleMessage(message: any): Promise<any> {
         userId: state.userId,
         platform: state.platform,
         authenticated: !!getSessionToken(),
+        captureMode: state.captureMode,
+        promptsMutedByUser: state.promptsMutedByUser,
       };
 
     case 'SET_AUTH_TOKEN':
@@ -239,11 +252,8 @@ async function handleStartCoaching(message: any): Promise<any> {
     state.eventBuffer = [];
     state.captureMode = captureMode;
 
-    // Start event batching every 3 seconds (per SRS)
-    state.batchInterval = setInterval(flushEventBuffer, 3000);
-
-    // Start prompt polling every 2 seconds (per SRS)
-    state.pollingInterval = setInterval(pollForPrompts, 2000);
+    state.promptsMutedByUser = false;
+    startSessionIntervals();
 
     // Notify content script that coaching has started (audio capture runs there)
     await sendMessageToMeetingTabs({
@@ -305,6 +315,7 @@ async function handleStopCoaching(): Promise<any> {
       state.status = state.meetingDetected ? 'ready' : 'off';
       state.eventBuffer = [];
       state.captureMode = 'full_meeting';
+      state.promptsMutedByUser = false;
       state.batchInterval = null;
       state.pollingInterval = null;
       if (!state.meetingDetected) {
@@ -363,6 +374,7 @@ async function handleMeetingEnded(): Promise<any> {
     state.status = 'off';
     state.eventBuffer = [];
     state.captureMode = 'full_meeting';
+    state.promptsMutedByUser = false;
 
     broadcastStatus();
     return { status: 'off' };
@@ -488,6 +500,8 @@ function broadcastStatus(): void {
     meetingDetected: state.meetingDetected,
     meetingSessionId: state.meetingSessionId,
     platform: state.platform,
+    captureMode: state.captureMode,
+    promptsMutedByUser: state.promptsMutedByUser,
   }).catch(() => {}); // Ignore if no listeners
 }
 
@@ -516,6 +530,17 @@ function broadcastAudioTranscript(message: {
     endOffsetMs: message.endOffsetMs,
     eventTimeMs: message.eventTimeMs,
   });
+}
+
+function startSessionIntervals(): void {
+  if (state.batchInterval) clearInterval(state.batchInterval);
+  if (state.pollingInterval) clearInterval(state.pollingInterval);
+
+  // Start event batching every 3 seconds (per SRS)
+  state.batchInterval = setInterval(flushEventBuffer, 3000);
+
+  // Start prompt polling every 2 seconds (per SRS)
+  state.pollingInterval = setInterval(pollForPrompts, 2000);
 }
 
 function getPreferredMeetingTab(callback: (tab: chrome.tabs.Tab | undefined) => void): void {

@@ -190,7 +190,8 @@
     eventsEmitted: 0,
     diagnosticInterval: null,
     selfNames: /* @__PURE__ */ new Set(),
-    captureMode: "full_meeting"
+    captureMode: "full_meeting",
+    promptsMutedByUser: false
   };
   var CAPTION_SELECTORS = [
     // 2025/2026 Meet caption area — the bottom overlay with live text
@@ -843,7 +844,9 @@
     switch (message.type) {
       case "STATUS_UPDATE": {
         const previousStatus = state.status;
-        state.status = message.status;
+        const incomingMuted = message.status === "muted" && message.promptsMutedByUser === true;
+        state.status = incomingMuted ? "muted" : message.status === "muted" ? "active" : message.status;
+        state.promptsMutedByUser = incomingMuted;
         state.meetingDetected = message.meetingDetected ?? state.meetingDetected;
         state.meetingSessionId = message.meetingSessionId;
         state.platform = message.platform ?? state.platform ?? getPlatform();
@@ -855,7 +858,7 @@
         break;
       }
       case "SHOW_PROMPT":
-        if (state.status !== "muted" && (detectMeeting() || shouldTrustLikelyMeetingUrl())) {
+        if (!state.promptsMutedByUser && (detectMeeting() || shouldTrustLikelyMeetingUrl())) {
           state.meetingDetected = true;
           if (state.status !== "active") {
             state.status = "active";
@@ -873,6 +876,7 @@
         state.platform = message.platform ?? getPlatform();
         state.captureMode = message.captureMode === "user_voice_only" ? "user_voice_only" : "full_meeting";
         state.status = "active";
+        state.promptsMutedByUser = false;
         state.meetingDetected = true;
         updateStatusIndicator();
         startSignalCapture();
@@ -907,7 +911,8 @@
         sendResponse({
           meetingDetected: state.meetingDetected || detectMeeting() || shouldTrustLikelyMeetingUrl(),
           platform: state.platform ?? getPlatform(),
-          status: state.status
+          status: state.status,
+          promptsMutedByUser: state.promptsMutedByUser
         });
         return true;
     }
