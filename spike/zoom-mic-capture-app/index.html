@@ -197,9 +197,15 @@
       .prompt-card { transition: none; transform: none; }
     }
 
-    /* --- Capture feed: tqdm-style collection bar + analysis output from the
-           relay. Hidden until the first capture starts. --- */
+    /* --- Coaching prompts feed: large rounded box, empty until the first
+           30-second analysis result arrives, then fills with a running list.
+           Sized via flex:1 (not a fixed height) so it takes roughly half of
+           the prompt-area, matching .laws-info above the divider. --- */
     .capture-feed {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
       background: var(--card-bg);
       border: 1px solid var(--card-border);
       border-radius: 10px;
@@ -208,17 +214,11 @@
       font-size: 11px;
       line-height: 1.5;
     }
-    .capture-feed[hidden] { display: none; }
     #feed-out {
-      max-height: 96px;
+      flex: 1;
       overflow-y: auto;
       white-space: pre-wrap;
       word-break: break-word;
-    }
-    #feed-out:empty { display: none; }
-    /* Pop-out is only 240px tall — keep feed + prompt card + strip fitting */
-    @media (max-height: 300px) {
-      #feed-out { max-height: 56px; }
     }
     #feed-out .muted { color: var(--text-muted); }
     #feed-out .err { color: var(--dot-error); }
@@ -234,7 +234,6 @@
       border-radius: 4px;
     }
     #feed-out .report-h { color: var(--text-muted); letter-spacing: 0.06em; margin-top: 4px; }
-    #progress { color: var(--text-muted); white-space: nowrap; overflow: hidden; }
 
     /* --- Thin status strip: the only thing visible when no prompt is up. --- */
     .status-strip {
@@ -260,8 +259,8 @@
     .status-strip button:hover:not(:disabled) { background: var(--control-hover); }
     .status-strip button:disabled { opacity: 0.4; cursor: default; }
 
-    /* Session-state dot precedes the status label app.js writes into #status
-       (idle / recording / error). */
+    /* Session-state dot precedes the tqdm progress/chunk indicator app.js
+       writes into #progress (idle / chunk N |bar| Xs / error). */
     .state-dot {
       width: 8px;
       height: 8px;
@@ -269,7 +268,14 @@
       background: var(--dot-paused);
       flex: none;
     }
-    #status { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #progress {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-family: ui-monospace, Consolas, monospace;
+      color: var(--text-muted);
+    }
     .spacer { flex: 1; }
 
     /* --- Overflow menu (⋯): <details> so it needs zero JS. Opens upward,
@@ -467,7 +473,7 @@
       </details>
     </div>
 
-    <!-- BOTTOM HALF: Coaching Prompts & Capture Feed (unchanged in function) -->
+    <!-- BOTTOM HALF: Coaching Prompts & Capture Feed -->
     <div class="prompt-area">
       <div class="prompt-dock">
         <div class="prompt-card" id="prompt-card">
@@ -475,14 +481,13 @@
           <p class="prompt-text" id="prompt-text"></p>
         </div>
 
-        <div class="capture-feed" id="feed" hidden>
+        <div class="capture-feed" id="feed">
           <div id="feed-out"></div>
-          <div id="progress">idle</div>
         </div>
 
         <div class="status-strip">
           <span class="state-dot" aria-hidden="true"></span>
-          <span id="status">idle</span>
+          <span id="progress">idle</span>
           <span class="spacer"></span>
           <details class="overflow">
             <summary aria-label="More options">⋯</summary>

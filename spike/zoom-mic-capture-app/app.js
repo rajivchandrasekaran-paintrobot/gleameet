@@ -2,7 +2,6 @@
 // because the CSP is script-src 'self' + the Zoom SDK origins — inline
 // scripts are blocked, and the Zoom Marketplace validator wants it that way.
 const logEl = document.getElementById('log');
-const statusEl = document.getElementById('status');
 const feedEl = document.getElementById('feed');
 const feedOutEl = document.getElementById('feed-out');
 const progressEl = document.getElementById('progress');
@@ -16,7 +15,8 @@ const log = (label, data) => {
   logEl.scrollTop = logEl.scrollHeight;
   console.log(label, data);
 };
-const setStatus = (s) => { statusEl.textContent = s; };
+// #progress is the single status-strip line: idle / error / the live tqdm bar
+const setStatus = (s) => { progressEl.textContent = s; };
 
 let stream, recorder, restartTimer;
 let totalChunks = 0, totalBytes = 0;
@@ -51,8 +51,9 @@ function renderProgress() {
   const width = 10;
   const filled = Math.round((elapsed / CHUNK_MS) * width);
   const bar = '█'.repeat(filled) + '─'.repeat(width - filled);
+  const totalSec = (CHUNK_MS / 1000).toFixed(0);
   progressEl.textContent =
-    `chunk ${chunkSeq} |${bar}| ${(elapsed / 1000).toFixed(1)}/10s ${micHot ? '●' : '○'} rec`;
+    `chunk ${chunkSeq} |${bar}| ${(elapsed / 1000).toFixed(1)}/${totalSec}s ${micHot ? '●' : '○'} rec`;
 }
 
 // --- Coaching prompt card (slide-up dock card from the restyle)
@@ -92,21 +93,6 @@ function showCoachingBlurb(chunk, prompts) {
   log('coaching blurb', { ts, text, chunk });
 }
 
-function renderReport(r) {
-  const s = r.summary_json || {};
-  feedLine('— POST-MEETING REPORT —', 'report-h');
-  feedLine(
-    `duration ${s.duration_seconds ?? '?'}s · prompts shown ${s.total_prompts_shown ?? 0}` +
-    ` · laws: ${(s.laws_triggered || []).join(', ') || 'none'}`
-  );
-  const asText = (x) => (typeof x === 'string' ? x : x.text || x.title || JSON.stringify(x));
-  (r.strengths_json || []).forEach((x) => feedLine(`+ ${asText(x)}`, 'good'));
-  (r.growth_areas_json || []).forEach((x) => feedLine(`△ ${asText(x)}`, 'nudge'));
-  if (r.summary_analysis) feedLine(r.summary_analysis, 'muted');
-  log('report', r); // full JSON in the ⋯ menu log
-  setStatus('report ready');
-}
-
 async function pollAnalysis() {
   try {
     const res = await fetch(`/analysis?since=${lastSeenSeq}`);
@@ -122,10 +108,11 @@ async function pollAnalysis() {
     }
     for (const r of data.results) {
       lastSeenSeq = Math.max(lastSeenSeq, r.seq);
+      const ts = new Date().toLocaleTimeString();
       if (r.error) {
-        feedLine(`✖ chunk ${r.seq}: ${r.error}`, 'err');
+        feedLine(`[${ts}] ✖ ${r.error}`, 'err');
       } else if (!r.text) {
-        feedLine(`· chunk ${r.seq}: (silence)`, 'muted');
+        feedLine(`[${ts}] · (silence)`, 'muted');
       } else {
         // Show coaching blurb for this chunk
         showCoachingBlurb(r.seq, r.prompts || []);
@@ -230,10 +217,9 @@ async function startProbe() {
     totalChunks = 0; totalBytes = 0;
     let pending = [];
     if (chunkSeq === 0) {
-      // First time only: clear feed and show it
+      // First time only: clear feed
       chunkSeq = 1;
       feedOutEl.innerHTML = '';
-      feedEl.hidden = false;
     }
     chunkStartedAt = Date.now();
     awaitingAnalysis = false;
@@ -248,6 +234,7 @@ async function startProbe() {
       const endOffsetMs = Date.now();
       pending = [];
       chunkSeq += 1;
+      chunkStartedAt = Date.now(); // starts the next cycle's tqdm bar
       if (blob.size < 1000) { log('chunk skipped (too small)', blob.size); return; }
       totalChunks += 1;
       totalBytes += blob.size;
@@ -261,7 +248,6 @@ async function startProbe() {
       log('chunk shipped, bytes', blob.size);
       awaitingAnalysis = true;
       analysisDeadline = Date.now() + 15000;
-      progressEl.textContent = `chunk ${seq}: analyzing...`;
     };
     recorder.onerror = (e) => log('MediaRecorder error', e.error?.message || String(e));
     recorder.start();
