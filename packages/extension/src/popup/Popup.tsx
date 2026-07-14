@@ -400,6 +400,7 @@ export const Popup: React.FC = () => {
     const captureOtherParticipants = captureMode !== 'user_voice_only';
     chrome.runtime.sendMessage({
       type: 'START_COACHING',
+      platform: state.platform,
       captureMode,
       consent: {
         consent_version: '1.0',

@@ -176,6 +176,7 @@ async function handleMessage(message, sender) {
     case "MEETING_ENDED":
       return handleMeetingEnded(message, sender);
     case "START_COACHING":
+      await restoreActiveCoachingSessionSnapshot();
       if (state.meetingSessionId) {
         cancelTrackedMeetingTabCleanup();
         await refreshMeetingContextFromTabs();
@@ -315,9 +316,11 @@ async function handleAuthenticate(googleIdToken) {
 async function handleStartCoaching(message) {
   try {
     cancelTrackedMeetingTabCleanup();
+    await restoreActiveCoachingSessionSnapshot();
     if (!getSessionToken()) {
       return { error: "Not authenticated. Please sign in first." };
     }
+    await refreshMeetingContextFromTabs();
     const platform = await resolveActiveMeetingPlatform(message.platform);
     if (!platform) {
       return { error: "No supported web meeting tab detected." };
@@ -370,6 +373,12 @@ async function handlePauseCoaching() {
     if (state.pollingInterval) {
       clearInterval(state.pollingInterval);
       state.pollingInterval = null;
+    }
+    const context = await getPreferredMeetingContext();
+    if (context?.meetingDetected) {
+      state.meetingDetected = true;
+      state.platform = context.platform ?? state.platform;
+      state.meetingTabId = context.tabId ?? state.meetingTabId;
     }
     state.status = "ready";
     state.coachingPausedByUser = true;
@@ -610,6 +619,24 @@ function persistActiveCoachingSession() {
   };
   chrome.storage.local.set({ activeCoachingSession: snapshot });
 }
+async function restoreActiveCoachingSessionSnapshot() {
+  if (state.meetingSessionId) return;
+  const data = await new Promise((resolve) => {
+    chrome.storage.local.get(["activeCoachingSession"], resolve);
+  });
+  const persisted = data.activeCoachingSession;
+  const persistedAgeMs = persisted?.updatedAt ? Date.now() - persisted.updatedAt : Infinity;
+  if (!persisted?.meetingSessionId || persistedAgeMs >= 8 * 60 * 60 * 1e3) return;
+  state.meetingSessionId = persisted.meetingSessionId;
+  state.userId = persisted.userId ?? state.userId;
+  state.platform = persisted.platform ?? state.platform;
+  state.meetingTabId = persisted.meetingTabId ?? state.meetingTabId;
+  state.status = persisted.status === "muted" && persisted.promptsMutedByUser ? "muted" : persisted.coachingPausedByUser ? "ready" : "active";
+  state.captureMode = persisted.captureMode === "user_voice_only" ? "user_voice_only" : "full_meeting";
+  state.promptsMutedByUser = persisted.promptsMutedByUser === true;
+  state.coachingPausedByUser = persisted.coachingPausedByUser === true;
+  state.meetingDetected = true;
+}
 function cancelTrackedMeetingTabCleanup() {
   if (!meetingTabCleanupTimer) return;
   clearTimeout(meetingTabCleanupTimer);
@@ -640,6 +667,12 @@ async function cleanupIfTrackedMeetingTabIsGone(reason) {
     } else if (state.status === "off") {
       state.status = "ready";
     }
+    broadcastStatus();
+    return;
+  }
+  if (reason === "tracked-tab-left-meeting-url" && state.meetingSessionId && state.coachingPausedByUser) {
+    state.meetingDetected = true;
+    state.status = "ready";
     broadcastStatus();
     return;
   }
