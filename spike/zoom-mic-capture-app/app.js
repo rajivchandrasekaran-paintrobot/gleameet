@@ -2,11 +2,13 @@
 // because the CSP is script-src 'self' + the Zoom SDK origins — inline
 // scripts are blocked, and the Zoom Marketplace validator wants it that way.
 const logEl = document.getElementById('log');
-const feedEl = document.getElementById('feed');
-const feedOutEl = document.getElementById('feed-out');
 const progressEl = document.getElementById('progress');
 const promptCardEl = document.getElementById('prompt-card');
 const promptTextEl = document.getElementById('prompt-text');
+const promptMeaningEl = document.getElementById('prompt-meaning');
+const promptLawEl = document.getElementById('prompt-law');
+const promptTypeEl = document.getElementById('prompt-type');
+const promptTimeEl = document.getElementById('prompt-time');
 
 const log = (label, data) => {
   const stamp = new Date().toISOString().slice(11, 19);
@@ -33,17 +35,7 @@ let pollTimer = null;
 let lastSeenSeq = 0;
 let awaitingAnalysis = false;  // waiting for this chunk's analysis
 let analysisDeadline = 0;
-let promptTimer = null;
 let autoRunning = false; // true once page has loaded and mic access granted
-
-function feedLine(text, cls) {
-  const div = document.createElement('div');
-  if (cls) div.className = cls;
-  div.textContent = text;
-  feedOutEl.appendChild(div);
-  while (feedOutEl.childElementCount > 40) feedOutEl.removeChild(feedOutEl.firstChild);
-  feedOutEl.scrollTop = feedOutEl.scrollHeight;
-}
 
 function renderProgress() {
   if (!chunkStartedAt) return;
@@ -56,41 +48,37 @@ function renderProgress() {
     `chunk ${chunkSeq} |${bar}| ${(elapsed / 1000).toFixed(1)}/${totalSec}s ${micHot ? '●' : '○'} rec`;
 }
 
-// --- Coaching prompt card (slide-up dock card from the restyle)
-function showPrompt(text) {
-  promptTextEl.textContent = text;
-  promptCardEl.classList.remove('dismissing');
-  promptCardEl.classList.add('visible');
-  clearTimeout(promptTimer);
-  promptTimer = setTimeout(dismissPrompt, 15000);
+// --- Coaching prompt card: shows exactly ONE prompt at a time —
+// short_text in bold, rationale_text in smaller type below. It never
+// auto-dismisses; when the next prompt arrives the card blurs/fades out
+// (.fading, 700ms — matches the CSS transition), swaps text, fades back in.
+let swapTimer = null;
+function showPrompt(p) {
+  const main = p.short_text || p.text || JSON.stringify(p);
+  const meaning = p.rationale_text || '';
+  const apply = () => {
+    promptCardEl.classList.remove('placeholder');
+    promptLawEl.textContent = p.law_id || '';
+    promptTypeEl.textContent = p.prompt_type || '';
+    promptTimeEl.textContent = new Date(p.shown_at || Date.now()).toLocaleTimeString();
+    promptTextEl.textContent = main;
+    promptMeaningEl.textContent = meaning;
+    promptCardEl.classList.remove('fading');
+  };
+  clearTimeout(swapTimer);
+  if (promptCardEl.classList.contains('placeholder')) {
+    apply(); // first prompt: no old content to fade out
+    return;
+  }
+  promptCardEl.classList.add('fading');
+  swapTimer = setTimeout(apply, 700);
 }
-function dismissPrompt() {
-  clearTimeout(promptTimer);
-  promptCardEl.classList.add('dismissing');
-  setTimeout(() => promptCardEl.classList.remove('visible', 'dismissing'), 250);
-}
-promptCardEl.addEventListener('click', dismissPrompt);
 
 function stopFeed(finalText) {
   clearInterval(pollTimer);
   pollTimer = null;
   awaitingAnalysis = false;
   progressEl.textContent = finalText || 'idle';
-}
-
-// Display a "coaching blurb": timestamp + top coaching prompt for this 30s chunk
-function showCoachingBlurb(chunk, prompts) {
-  if (!prompts || prompts.length === 0) {
-    const ts = new Date().toLocaleTimeString();
-    feedLine(`[${ts}] (no coaching insights this cycle)`, 'muted');
-    return;
-  }
-  const ts = new Date().toLocaleTimeString();
-  const topPrompt = prompts[0];
-  const text = topPrompt.short_text || topPrompt.text || JSON.stringify(topPrompt);
-  const summary = `[${ts}] ${text}`;
-  feedLine(summary, 'coaching-blurb');
-  log('coaching blurb', { ts, text, chunk });
 }
 
 async function pollAnalysis() {
@@ -100,28 +88,26 @@ async function pollAnalysis() {
     const data = await res.json();
     if (!data.relay) {
       if (awaitingAnalysis) {
-        feedLine('relay off — no backend analysis (set RENDER_API_BASE)', 'muted');
-        stopFeed('idle');
+        log('relay', 'off — no backend analysis (set RENDER_API_BASE)');
+        stopFeed('relay off');
         if (autoRunning) setTimeout(() => startProbe(), 1000);
       }
       return;
     }
     for (const r of data.results) {
       lastSeenSeq = Math.max(lastSeenSeq, r.seq);
-      const ts = new Date().toLocaleTimeString();
+      // Silence/errors go to the ⋯ menu log only — the card keeps showing
+      // the last real prompt rather than churning with noise.
       if (r.error) {
-        feedLine(`[${ts}] ✖ ${r.error}`, 'err');
+        log(`chunk ${r.seq} error`, r.error);
       } else if (!r.text) {
-        feedLine(`[${ts}] · (silence)`, 'muted');
+        log(`chunk ${r.seq}`, '(silence)');
+      } else if ((r.prompts || []).length) {
+        // Top prompt for this chunk takes over the card; extras go to the log.
+        showPrompt(r.prompts[0]);
+        r.prompts.forEach((p) => log('coaching prompt', p));
       } else {
-        // Show coaching blurb for this chunk
-        showCoachingBlurb(r.seq, r.prompts || []);
-        // Also show prompts in the prompt card briefly
-        for (const p of r.prompts || []) {
-          const text = p.short_text || p.text || JSON.stringify(p);
-          showPrompt(text);
-          log('coaching prompt', p);
-        }
+        log(`chunk ${r.seq}`, `transcribed, no prompt: "${r.text}"`);
       }
       if (r.seq >= chunkSeq) awaitingAnalysis = false;
     }
@@ -131,7 +117,7 @@ async function pollAnalysis() {
       setTimeout(() => startProbe(), 500);
     }
     if (awaitingAnalysis && Date.now() > analysisDeadline) {
-      feedLine('✖ timed out waiting for analysis', 'err');
+      log('analysis', 'timed out waiting for analysis');
       stopFeed('idle');
       if (autoRunning) setTimeout(() => startProbe(), 1000);
     }
@@ -216,11 +202,7 @@ async function startProbe() {
     // Collect for 30s then auto-restart. Each blob is a complete WebM file.
     totalChunks = 0; totalBytes = 0;
     let pending = [];
-    if (chunkSeq === 0) {
-      // First time only: clear feed
-      chunkSeq = 1;
-      feedOutEl.innerHTML = '';
-    }
+    if (chunkSeq === 0) chunkSeq = 1;
     chunkStartedAt = Date.now();
     awaitingAnalysis = false;
     recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);

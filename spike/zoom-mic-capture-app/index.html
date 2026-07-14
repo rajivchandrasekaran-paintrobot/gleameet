@@ -156,84 +156,67 @@
       overflow-y: auto;
     }
 
-    /* --- Prompt card: hidden until a coaching prompt arrives.
-           Wiring toggles .visible to slide it up, .dismissing to fade+collapse.
-           (No prompt-delivery wiring exists in this spike yet — the classes
-           are the contract for it.) --- */
+    /* --- Prompt card: fills the whole bottom half. Shows exactly ONE
+           coaching prompt — bold text with its plain-language meaning in
+           smaller type below. It never auto-dismisses; when the next prompt
+           arrives, app.js toggles .fading so the old content blurs/fades
+           out, then swaps in the new text and fades back in. --- */
     .prompt-card {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 10px;
-      padding: 12px 14px;
-      line-height: 1.45;
-      display: none;
-      transform: translateY(calc(100% + 12px));
-      opacity: 0;
-      transition: transform 200ms ease-out, opacity 200ms ease-out,
-                  max-height 200ms ease-out;
-    }
-    .prompt-card.visible {
-      display: block;
-      transform: translateY(0);
-      opacity: 1;
-    }
-    .prompt-card.dismissing {
-      opacity: 0;
-      max-height: 0;
-      padding-top: 0;
-      padding-bottom: 0;
-      overflow: hidden;
-    }
-    .prompt-card .prompt-title {
-      font-weight: 600;
-      margin: 0 0 4px;
-      font-size: 12px;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-    }
-    .prompt-card .prompt-text { margin: 0; }
-    @media (prefers-reduced-motion: reduce) {
-      .prompt-card { transition: none; transform: none; }
-    }
-
-    /* --- Coaching prompts feed: large rounded box, empty until the first
-           30-second analysis result arrives, then fills with a running list.
-           Sized via flex:1 (not a fixed height) so it takes roughly half of
-           the prompt-area, matching .laws-info above the divider. --- */
-    .capture-feed {
       flex: 1;
       min-height: 0;
       display: flex;
       flex-direction: column;
+      justify-content: center;
+      overflow-y: auto;
       background: var(--card-bg);
       border: 1px solid var(--card-border);
       border-radius: 10px;
-      padding: 8px 10px;
-      font-family: ui-monospace, Consolas, monospace;
+      padding: 16px 18px;
+      line-height: 1.45;
+      opacity: 1;
+      filter: blur(0);
+      transition: opacity 700ms ease, filter 700ms ease;
+    }
+    .prompt-card.fading {
+      opacity: 0;
+      filter: blur(6px);
+    }
+    /* Header row: law-id left · prompt type center · time right */
+    .prompt-card .prompt-header {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      margin: 0 0 10px;
       font-size: 11px;
-      line-height: 1.5;
-    }
-    #feed-out {
-      flex: 1;
-      overflow-y: auto;
-      white-space: pre-wrap;
-      word-break: break-word;
-    }
-    #feed-out .muted { color: var(--text-muted); }
-    #feed-out .err { color: var(--dot-error); }
-    #feed-out .good { color: var(--dot-active); }
-    #feed-out .nudge { font-weight: 600; }
-    #feed-out .coaching-blurb {
       font-weight: 600;
-      color: var(--text);
-      background: var(--card-bg);
-      padding: 6px 8px;
-      margin: 8px 0;
-      border-left: 3px solid var(--dot-active);
-      border-radius: 4px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
     }
-    #feed-out .report-h { color: var(--text-muted); letter-spacing: 0.06em; margin-top: 4px; }
+    .prompt-card .prompt-header span { flex: 1; white-space: nowrap; }
+    .prompt-card .prompt-header #prompt-type { text-align: center; }
+    .prompt-card .prompt-header #prompt-time { text-align: right; }
+    .prompt-card .prompt-text {
+      margin: 0;
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .prompt-card .prompt-meaning {
+      margin: 10px 0 0;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .prompt-card .prompt-meaning:empty { display: none; }
+    /* Before the first prompt lands, the card shows a quiet placeholder */
+    .prompt-card.placeholder .prompt-text {
+      font-weight: 400;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .prompt-card { transition: none; }
+    }
 
     /* --- Thin status strip: the only thing visible when no prompt is up. --- */
     .status-strip {
@@ -473,16 +456,19 @@
       </details>
     </div>
 
-    <!-- BOTTOM HALF: Coaching Prompts & Capture Feed -->
+    <!-- BOTTOM HALF: the single current coaching prompt (short_text bold,
+         rationale_text below) + status strip. No history — each new prompt
+         crossfades over the previous one. -->
     <div class="prompt-area">
       <div class="prompt-dock">
-        <div class="prompt-card" id="prompt-card">
-          <p class="prompt-title">Coaching prompt</p>
-          <p class="prompt-text" id="prompt-text"></p>
-        </div>
-
-        <div class="capture-feed" id="feed">
-          <div id="feed-out"></div>
+        <div class="prompt-card placeholder" id="prompt-card">
+          <div class="prompt-header">
+            <span id="prompt-law"></span>
+            <span id="prompt-type">Coaching prompt</span>
+            <span id="prompt-time"></span>
+          </div>
+          <p class="prompt-text" id="prompt-text">Listening — your first coaching prompt will appear here.</p>
+          <p class="prompt-meaning" id="prompt-meaning"></p>
         </div>
 
         <div class="status-strip">
