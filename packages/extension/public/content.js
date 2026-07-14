@@ -283,10 +283,19 @@
       return !endedUi && (inCallUrl || hasCallUi || !!document.querySelector("video") && titleLooksMeetingLike);
     }
     if (platform === "zoom") {
-      const hasMeetingUrl = url.includes("/wc/") || url.includes("/join");
+      const decodedUrl = decodeURIComponent(url);
+      const zoomPath = (() => {
+        try {
+          return new URL(url).pathname;
+        } catch (_err) {
+          return decodedUrl;
+        }
+      })();
+      const hasWebClientMeetingUrl = /\/wc\/\d+(?:\/(?:join|start|meeting))?(?:\/|$)/i.test(zoomPath);
+      const hasMeetingUrl = hasWebClientMeetingUrl || url.includes("/join");
       const hasMeetingUi = !!document.querySelector(".meeting-app") || !!document.querySelector("#wc-container-right") || !!document.querySelector(".footer-button-base__button-label") || !!document.querySelector('[aria-label*="Leave"]') || !!document.querySelector('[aria-label*="leave"]') || !!document.querySelector('[aria-label*="mute"]') || !!document.querySelector('[class*="footer"] button') || !!document.querySelector("video");
       const endedScreen = !!document.querySelector(".zm-modal-body-title") && /ended|left|removed/i.test(document.body.textContent || "");
-      return !endedScreen && hasMeetingUrl && hasMeetingUi;
+      return !endedScreen && hasMeetingUrl && (hasWebClientMeetingUrl || hasMeetingUi);
     }
     return false;
   }

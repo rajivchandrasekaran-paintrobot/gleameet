@@ -197,7 +197,16 @@ function detectMeeting(): boolean {
 
   // Zoom web client
   if (platform === 'zoom') {
-    const hasMeetingUrl = url.includes('/wc/') || url.includes('/join');
+    const decodedUrl = decodeURIComponent(url);
+    const zoomPath = (() => {
+      try {
+        return new URL(url).pathname;
+      } catch (_err) {
+        return decodedUrl;
+      }
+    })();
+    const hasWebClientMeetingUrl = /\/wc\/\d+(?:\/(?:join|start|meeting))?(?:\/|$)/i.test(zoomPath);
+    const hasMeetingUrl = hasWebClientMeetingUrl || url.includes('/join');
     const hasMeetingUi =
       !!document.querySelector('.meeting-app') ||
       !!document.querySelector('#wc-container-right') ||
@@ -210,7 +219,7 @@ function detectMeeting(): boolean {
     const endedScreen =
       !!document.querySelector('.zm-modal-body-title') &&
       /ended|left|removed/i.test(document.body.textContent || '');
-    return !endedScreen && hasMeetingUrl && hasMeetingUi;
+    return !endedScreen && hasMeetingUrl && (hasWebClientMeetingUrl || hasMeetingUi);
   }
 
   return false;
