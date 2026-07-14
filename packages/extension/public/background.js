@@ -574,10 +574,12 @@ async function sendMessageToMeetingTabs(message) {
     tabs.map(async (tab) => {
       if (!tab.id) return;
       const context = await ensureMeetingTabReady(tab);
-      if (!context && message.type !== "DISMISS_ALL_PROMPTS") {
+      const likelyMeetingUrl = isLikelyMeetingUrl(tab.url || "");
+      const meetingDetected = !!context?.meetingDetected || likelyMeetingUrl;
+      if (!context && !likelyMeetingUrl && message.type !== "DISMISS_ALL_PROMPTS") {
         return;
       }
-      if (!context?.meetingDetected && message.type !== "DISMISS_ALL_PROMPTS") {
+      if (!meetingDetected && message.type !== "DISMISS_ALL_PROMPTS") {
         return;
       }
       if (tab.id && state.status === "active" && state.meetingSessionId && state.userId && message.type !== "COACHING_STARTED" && context?.status !== "active") {

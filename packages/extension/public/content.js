@@ -301,6 +301,29 @@
     }
     return false;
   }
+  function isLikelyMeetingUrl(url = window.location.href) {
+    const platform = detectPlatformFromUrl(url);
+    if (!platform) return false;
+    const decodedUrl = decodeURIComponent(url);
+    let path = decodedUrl;
+    try {
+      path = new URL(url).pathname;
+    } catch (_err) {
+    }
+    if (platform === "google_meet") {
+      return /meet\.google\.com\/[a-z]+-[a-z]+-[a-z]+/i.test(decodedUrl);
+    }
+    if (platform === "zoom") {
+      return /\/wc\/\d+(?:\/(?:join|start|meeting))?(?:\/|$)/i.test(path);
+    }
+    if (platform === "teams") {
+      return decodedUrl.includes("/meet/") || decodedUrl.includes("/callingv2") || decodedUrl.includes("/light-meetings/launch") || decodedUrl.includes("/l/meetup-join") || decodedUrl.includes("type=meet") || decodedUrl.includes("lightExperience=true");
+    }
+    return false;
+  }
+  function shouldTrustLikelyMeetingUrl() {
+    return isLikelyMeetingUrl() && (state.meetingDetected || state.status === "active" || state.status === "muted");
+  }
   function isVisibleElement(el) {
     const element = el;
     const style = window.getComputedStyle(element);
@@ -832,14 +855,14 @@
         break;
       }
       case "SHOW_PROMPT":
-        if (state.status !== "muted" && detectMeeting()) {
+        if (state.status !== "muted" && (detectMeeting() || shouldTrustLikelyMeetingUrl())) {
           state.meetingDetected = true;
           if (state.status !== "active") {
             state.status = "active";
             updateStatusIndicator();
           }
           showPrompt(message.prompt);
-        } else if (!detectMeeting()) {
+        } else if (!detectMeeting() && !shouldTrustLikelyMeetingUrl()) {
           dismissCurrentPrompt();
         }
         break;
@@ -882,7 +905,7 @@
         break;
       case "GET_CONTENT_STATUS":
         sendResponse({
-          meetingDetected: state.meetingDetected || detectMeeting(),
+          meetingDetected: state.meetingDetected || detectMeeting() || shouldTrustLikelyMeetingUrl(),
           platform: state.platform ?? getPlatform(),
           status: state.status
         });
