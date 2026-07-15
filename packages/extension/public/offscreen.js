@@ -120,15 +120,34 @@
     const recorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
     let chunkStartedAt = Date.now();
     let stopReported = false;
+    let interval = null;
+    let lastTranscriptTextAt = Date.now();
+    let chunksSinceText = 0;
+    let consecutiveUploadFailures = 0;
+    let consecutiveEmptyTranscripts = 0;
     const reportUnexpectedStop = (reason) => {
       if (stopReported || expectedRecorderStops.has(recorder)) return;
       stopReported = true;
+      if (interval) {
+        clearInterval(interval);
+        interval = null;
+      }
       chrome.runtime.sendMessage({
         type: "AUDIO_CAPTURE_STOPPED",
         stream: streamType,
         meetingSessionId,
         reason
       }).catch(() => {
+      });
+      try {
+        if (recorder.state === "recording") recorder.stop();
+      } catch (_) {
+      }
+      stream.getTracks().forEach((track) => {
+        try {
+          track.stop();
+        } catch (_) {
+        }
       });
     };
     recorder.onerror = () => reportUnexpectedStop("recorder-error");
@@ -158,9 +177,26 @@
         headers: { Authorization: `Bearer ${sessionToken}` },
         body: form
       }).catch(() => null);
-      if (!response?.ok) return;
+      if (!response?.ok) {
+        consecutiveUploadFailures++;
+        if (consecutiveUploadFailures >= 3) {
+          reportUnexpectedStop("transcription-upload-failed");
+        }
+        return;
+      }
+      consecutiveUploadFailures = 0;
       const result = await response.json().catch(() => null);
-      if (!result?.text) return;
+      if (!result?.text) {
+        consecutiveEmptyTranscripts++;
+        chunksSinceText++;
+        if (consecutiveEmptyTranscripts >= 6 && chunksSinceText >= 6 && Date.now() - lastTranscriptTextAt > 6e4) {
+          reportUnexpectedStop("transcription-stalled");
+        }
+        return;
+      }
+      consecutiveEmptyTranscripts = 0;
+      chunksSinceText = 0;
+      lastTranscriptTextAt = Date.now();
       chrome.runtime.sendMessage({
         type: "AUDIO_TRANSCRIPT_RESULT",
         text: result.text,
@@ -172,7 +208,7 @@
       });
     };
     recorder.start();
-    const interval = setInterval(() => {
+    interval = setInterval(() => {
       const liveAudioTrack = stream.getAudioTracks().some((track) => track.readyState === "live");
       if (recorder.state !== "recording" || !stream.active || !liveAudioTrack) {
         reportUnexpectedStop("health-check-failed");
