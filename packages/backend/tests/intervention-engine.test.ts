@@ -172,7 +172,7 @@ describe('Intervention Engine', () => {
     expect(setGlobalCooldown).toHaveBeenCalledWith('test-session', 15);
   });
 
-  test('fatigue penalty reduces score with more prompts shown', async () => {
+  test('does not suppress valid prompts just because prior prompts were shown', async () => {
     const state1 = createState({ prompts_shown_count: 0 });
     const triggers1 = [createTrigger('K-01', 0.85)];
     const result1 = await rankAndSelectPrompt('test-session', triggers1, state1);
@@ -185,20 +185,13 @@ describe('Intervention Engine', () => {
     (redis.incrementPromptCount as jest.Mock).mockResolvedValue(6);
     (redis.setGlobalCooldown as jest.Mock).mockResolvedValue(undefined);
 
-    const state2 = createState({ prompts_shown_count: 5 });
+    const state2 = createState({ prompts_shown_count: 50 });
     const triggers2 = [createTrigger('K-01', 0.85)];
     const result2 = await rankAndSelectPrompt('test-session', triggers2, state2);
 
     expect(result1).not.toBeNull();
-    // With prompts_shown_count=5, fatigue penalty = 5*0.05 = 0.25
-    // Score may drop below 0.2 threshold, making result2 null — that's fine
-    // The key assertion is that the prompt confidence is the same (set from trigger)
-    // but the selection score is lower
-    if (result2) {
-      expect(result2.confidence).toBe(result1!.confidence);
-    }
-    // Either result2 is null (score too low from fatigue) or it was selected
-    // Both are valid demonstrations of the fatigue mechanism
+    expect(result2).not.toBeNull();
+    expect(result2!.confidence).toBe(result1!.confidence);
   });
 
   test('prompt has required fields', async () => {

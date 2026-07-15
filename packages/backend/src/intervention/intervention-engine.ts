@@ -78,17 +78,13 @@ export async function rankAndSelectPrompt(
     const timingFit = speaking ? 0.1 : 0.9; // FR-050: penalize if user speaking
     const estimatedUsefulness = trigger.trigger_confidence * 0.8;
 
-    // Fatigue penalty: increases with more prompts shown
-    const fatiguePenalty = state.prompts_shown_count * 0.01; // Reduced — was cutting off nudges too early
-
     const score =
       (trigger.trigger_confidence * RANKING_WEIGHTS.TRIGGER_CONFIDENCE) +
       (urgency * RANKING_WEIGHTS.URGENCY) +
       (novelty * RANKING_WEIGHTS.NOVELTY) +
       (timingFit * RANKING_WEIGHTS.TIMING_FIT) +
       (estimatedUsefulness * RANKING_WEIGHTS.ESTIMATED_USEFULNESS) -
-      repeatPenalty -
-      fatiguePenalty;
+      repeatPenalty;
 
     // FR-050: Skip non-urgent prompts while speaking
     if (speaking && urgency < 0.8) continue;
