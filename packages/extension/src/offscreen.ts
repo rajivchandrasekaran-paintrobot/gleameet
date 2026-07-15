@@ -133,6 +133,8 @@ function startRecording(stream: MediaStream, streamType: string, meetingSessionI
   let chunksSinceText = 0;
   let consecutiveUploadFailures = 0;
   let consecutiveEmptyTranscripts = 0;
+  let consecutiveTinyChunks = 0;
+  let lastDataAvailableAt = Date.now();
 
   const reportUnexpectedStop = (reason: string): void => {
     if (stopReported || expectedRecorderStops.has(recorder)) return;
@@ -169,7 +171,20 @@ function startRecording(stream: MediaStream, streamType: string, meetingSessionI
   });
 
   recorder.ondataavailable = async e => {
-    if (!e.data || e.data.size < 1000) return;
+    lastDataAvailableAt = Date.now();
+    if (!e.data || e.data.size < 1000) {
+      consecutiveTinyChunks++;
+      chunksSinceText++;
+      if (
+        consecutiveTinyChunks >= 12 &&
+        chunksSinceText >= 12 &&
+        Date.now() - lastTranscriptTextAt > 120000
+      ) {
+        reportUnexpectedStop("audio-chunks-too-small");
+      }
+      return;
+    }
+    consecutiveTinyChunks = 0;
     const blob = e.data;
     const chunkEndedAt = Date.now();
     const chunkStart = chunkStartedAt;
@@ -209,6 +224,7 @@ function startRecording(stream: MediaStream, streamType: string, meetingSessionI
       return;
     }
     consecutiveEmptyTranscripts = 0;
+    consecutiveTinyChunks = 0;
     chunksSinceText = 0;
     lastTranscriptTextAt = Date.now();
 
@@ -227,6 +243,11 @@ function startRecording(stream: MediaStream, streamType: string, meetingSessionI
     const liveAudioTrack = stream.getAudioTracks().some(track => track.readyState === "live");
     if (recorder.state !== "recording" || !stream.active || !liveAudioTrack) {
       reportUnexpectedStop("health-check-failed");
+      return;
+    }
+
+    if (Date.now() - lastDataAvailableAt > 120000) {
+      reportUnexpectedStop("no-audio-chunks");
       return;
     }
 

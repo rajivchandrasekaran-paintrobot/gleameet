@@ -125,6 +125,8 @@
     let chunksSinceText = 0;
     let consecutiveUploadFailures = 0;
     let consecutiveEmptyTranscripts = 0;
+    let consecutiveTinyChunks = 0;
+    let lastDataAvailableAt = Date.now();
     const reportUnexpectedStop = (reason) => {
       if (stopReported || expectedRecorderStops.has(recorder)) return;
       stopReported = true;
@@ -163,7 +165,16 @@
       });
     });
     recorder.ondataavailable = async (e) => {
-      if (!e.data || e.data.size < 1e3) return;
+      lastDataAvailableAt = Date.now();
+      if (!e.data || e.data.size < 1e3) {
+        consecutiveTinyChunks++;
+        chunksSinceText++;
+        if (consecutiveTinyChunks >= 12 && chunksSinceText >= 12 && Date.now() - lastTranscriptTextAt > 12e4) {
+          reportUnexpectedStop("audio-chunks-too-small");
+        }
+        return;
+      }
+      consecutiveTinyChunks = 0;
       const blob = e.data;
       const chunkEndedAt = Date.now();
       const chunkStart = chunkStartedAt;
@@ -195,6 +206,7 @@
         return;
       }
       consecutiveEmptyTranscripts = 0;
+      consecutiveTinyChunks = 0;
       chunksSinceText = 0;
       lastTranscriptTextAt = Date.now();
       chrome.runtime.sendMessage({
@@ -212,6 +224,10 @@
       const liveAudioTrack = stream.getAudioTracks().some((track) => track.readyState === "live");
       if (recorder.state !== "recording" || !stream.active || !liveAudioTrack) {
         reportUnexpectedStop("health-check-failed");
+        return;
+      }
+      if (Date.now() - lastDataAvailableAt > 12e4) {
+        reportUnexpectedStop("no-audio-chunks");
         return;
       }
       try {

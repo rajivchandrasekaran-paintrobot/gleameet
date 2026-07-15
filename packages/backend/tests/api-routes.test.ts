@@ -234,6 +234,12 @@ describe('API Routes', () => {
         law_id: 'K-01',
       });
 
+      const initialLease = await request(app)
+        .get('/prompts/poll?meeting_session_id=sess-poll-test')
+        .set('Authorization', `Bearer ${TOKEN}`);
+      expect(initialLease.body.prompts).toEqual([]);
+
+      dateNowSpy.mockReturnValue(10000);
       const res = await request(app)
         .get('/prompts/poll?meeting_session_id=sess-poll-test')
         .set('Authorization', `Bearer ${TOKEN}`);
@@ -248,7 +254,7 @@ describe('API Routes', () => {
       expect(res2.body.prompts).toEqual([]);
 
       // If the frontend never acks display, the prompt becomes deliverable again.
-      dateNowSpy.mockReturnValue(10000);
+      dateNowSpy.mockReturnValue(19000);
       const res3 = await request(app)
         .get('/prompts/poll?meeting_session_id=sess-poll-test')
         .set('Authorization', `Bearer ${TOKEN}`);
@@ -292,6 +298,53 @@ describe('API Routes', () => {
         .get('/prompts/poll?meeting_session_id=sess-ack-test')
         .set('Authorization', `Bearer ${TOKEN}`);
       expect(poll.body.prompts).toEqual([]);
+    });
+
+    test('shown ack does not consume prompt until dismissal', async () => {
+      const dateNowSpy = jest.spyOn(Date, 'now');
+      dateNowSpy.mockReturnValue(20000);
+
+      enqueuePendingPrompt('sess-shown-test', {
+        prompt_id: 'p-shown',
+        short_text: 'Shown prompt',
+        law_id: 'K-01',
+      });
+
+      const shown = await request(app)
+        .post('/prompts/ack')
+        .set('Authorization', `Bearer ${TOKEN}`)
+        .send({
+          prompt_id: 'p-shown',
+          meeting_session_id: 'sess-shown-test',
+          action: 'shown',
+          timestamp: new Date().toISOString(),
+        });
+      expect(shown.status).toBe(200);
+
+      dateNowSpy.mockReturnValue(41000);
+      const poll = await request(app)
+        .get('/prompts/poll?meeting_session_id=sess-shown-test')
+        .set('Authorization', `Bearer ${TOKEN}`);
+      expect(poll.body.prompts.length).toBe(1);
+      expect(poll.body.prompts[0].prompt_id).toBe('p-shown');
+
+      await request(app)
+        .post('/prompts/ack')
+        .set('Authorization', `Bearer ${TOKEN}`)
+        .send({
+          prompt_id: 'p-shown',
+          meeting_session_id: 'sess-shown-test',
+          action: 'dismissed',
+          timestamp: new Date().toISOString(),
+        });
+
+      dateNowSpy.mockReturnValue(50000);
+      const afterDismiss = await request(app)
+        .get('/prompts/poll?meeting_session_id=sess-shown-test')
+        .set('Authorization', `Bearer ${TOKEN}`);
+      expect(afterDismiss.body.prompts).toEqual([]);
+
+      dateNowSpy.mockRestore();
     });
   });
 
